@@ -1,0 +1,20 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e4d5b74f4cd174c6fac1de7dc03d6b1f, type: 3}
+  m_Name: DefaultLeaderboardBoardConfig
+  m_EditorClassIdentifier: 
+  boardId: main
+  topCount: 50
+  rowsAbove: 4
+  rowsBelow: 6
+  maximumAnimatedPasses: 15
+  podiumSize: 3

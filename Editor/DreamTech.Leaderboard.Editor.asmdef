@@ -1,0 +1,33 @@
+{
+    "name": "DreamTech.Leaderboard.Editor",
+    "rootNamespace": "DreamTech.Leaderboard.EditorTools",
+    "references": [
+        "DreamTech.Leaderboard",
+        "DreamTech.Leaderboard.ViewModel",
+        "DreamTech.Leaderboard.UI",
+        "Unity.TextMeshPro",
+        "UnityEngine.UI"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [
+        {
+            "name": "com.unity.textmeshpro",
+            "expression": "3.2.0-pre.1",
+            "define": "DREAMTECH_LEADERBOARD_TMP_WRAPPING_MODE"
+        },
+        {
+            "name": "com.unity.ugui",
+            "expression": "2.0.0",
+            "define": "DREAMTECH_LEADERBOARD_TMP_WRAPPING_MODE"
+        }
+    ],
+    "noEngineReferences": false
+}

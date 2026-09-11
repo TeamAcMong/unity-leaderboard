@@ -1,0 +1,91 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 09b87b4e4001b4adabc208c074bf3033, type: 3}
+  m_Name: DefaultLeaderboardMotionConfig
+  m_EditorClassIdentifier: 
+  timeline:
+    IntroWait: 0.3
+    LiftDuration: 0.22
+    LiftScale: 1.05
+    ClimbSecondsPerRow: 0.09
+    ClimbDurationMinimum: 0.5
+    ClimbDurationMaximum: 1.4
+    SpinDuration: 0.7
+    PassSlideDuration: 0.26
+    MakeRoomAt: 0.3
+    LandDuration: 0.32
+    LandOvershoot: 1.3
+    LandFlashAlpha: 0.35
+    FlashDuration: 0.3
+    ScoreCountDuration: 0.6
+    NewEntryPopDuration: 0.4
+    NewEntryPopOvershoot: 1.6
+    BobDuration: 0.36
+    BobAmplitude: 0.035
+    MinimumPassBeatInterval: 0.05
+    MinimumSpinBeatInterval: 0.05
+    IntroStagger: 0.03
+    IntroDuration: 0.32
+    IntroOffset: 36
+    MaximumIntroDelay: 0.36
+    IntroStartScale: 0.96
+    IntroOvershoot: 1.2
+    FollowSmoothTime: 0.12
+    ScrollToLocalDuration: 0.45
+    PillPopDuration: 0.3
+    PillHoldDuration: 1.1
+    PillRiseDuration: 0.3
+    ShineDuration: 0.55
+    RankRollDuration: 0.12
+    BadgePunchDuration: 0.35
+  visuals:
+    ShadowMaximumAlpha: 0.45
+    ShadowOffset: 18
+    GlowBaseAlpha: 0.25
+    GlowPulseAlpha: 0.2
+    GlowPulseSpeed: 3
+    GlowBoostAlpha: 0.35
+    GlowAlphaSteps: 64
+    PillPopOvershoot: 1.8
+    PillRiseDistance: 22
+    BadgePunchStartScale: 1.3
+    BadgePunchOvershoot: 2.2
+    ScoreSwellScale: 1.06
+    ScoreSwellWindow: 0.09
+    ScoreSwellStiffness: 300
+    ScoreSwellDamping: 22
+    SunburstDuration: 1.6
+    SunburstSpinSpeed: 18
+    SunburstMaximumAlpha: 0.4
+    SunburstFirstPlaceScale: 1.2
+    SunburstPodiumScale: 1
+    BannerInDuration: 0.4
+    BannerHoldDuration: 1.1
+    BannerOutDuration: 0.25
+    BannerOutRise: 30
+    BannerGap: 12
+    TwinkleCount: 9
+    TwinkleBonusPerTier: 3
+    ConfettiFirstPlace: 110
+    ConfettiPodium: 70
+    ConfettiSpeedRange: {x: 850, y: 1500}
+    ConfettiSpreadAngle: 60
+    ConfettiGravity: 2300
+    ConfettiDrag: 1.8
+    ConfettiLifetimeRange: {x: 1.1, y: 1.6}
+    ConfettiSizeMinimum: {x: 14, y: 8}
+    ConfettiSizeMaximum: {x: 24, y: 13}
+    TwinkleLifetimeRange: {x: 0.55, y: 0.95}
+    TwinkleSizeRange: {x: 26, y: 46}
+    LoadingIndicatorDelay: 0.25
+    LoadingDotsPerSecond: 3
+    HostReadyTimeout: 1.5

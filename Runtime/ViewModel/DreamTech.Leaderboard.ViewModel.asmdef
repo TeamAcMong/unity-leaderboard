@@ -1,0 +1,16 @@
+{
+    "name": "DreamTech.Leaderboard.ViewModel",
+    "rootNamespace": "DreamTech.Leaderboard.ViewModel",
+    "references": [
+        "DreamTech.Leaderboard"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": true
+}

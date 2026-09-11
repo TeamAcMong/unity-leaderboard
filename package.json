@@ -1,0 +1,25 @@
+{
+  "name": "com.dreamtech.leaderboard",
+  "version": "0.1.0",
+  "displayName": "DreamTech Leaderboard",
+  "description": "Leaderboard lắp ráp kiểu Lego cho game mobile. Domain + board + mock backend thuần C#, view-model test được từng tick không cần Unity, widget uGUI/TextMeshPro không phụ thuộc nơi đặt (popup, màn riêng, khối trong màn Win). Điểm xếp hạng, backend, âm thanh/haptic và nơi lưu trạng thái đều cắm qua port.",
+  "unity": "2022.3",
+  "license": "MIT",
+  "documentationUrl": "https://github.com/TeamAcMong/unity-leaderboard/blob/main/Packages/com.dreamtech.leaderboard/README.md",
+  "changelogUrl": "https://github.com/TeamAcMong/unity-leaderboard/blob/main/Packages/com.dreamtech.leaderboard/CHANGELOG.md",
+  "licensesUrl": "https://github.com/TeamAcMong/unity-leaderboard/blob/main/LICENSE",
+  "author": {
+    "name": "DreamTech",
+    "url": "https://github.com/TeamAcMong"
+  },
+  "keywords": [
+    "leaderboard",
+    "ranking",
+    "ugui",
+    "textmeshpro"
+  ],
+  "dependencies": {
+    "com.unity.ugui": "1.0.0",
+    "com.unity.textmeshpro": "3.0.6"
+  }
+}
