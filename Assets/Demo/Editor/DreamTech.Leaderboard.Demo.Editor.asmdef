@@ -1,0 +1,23 @@
+{
+    "name": "DreamTech.Leaderboard.Demo.Editor",
+    "rootNamespace": "DreamTech.Leaderboard.Demo.EditorTools",
+    "references": [
+        "DreamTech.Leaderboard",
+        "DreamTech.Leaderboard.UI",
+        "DreamTech.Leaderboard.Editor",
+        "DreamTech.Leaderboard.Demo",
+        "Unity.TextMeshPro",
+        "UnityEngine.UI"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": false,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

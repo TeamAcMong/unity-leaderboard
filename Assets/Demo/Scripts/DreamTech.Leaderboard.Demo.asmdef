@@ -1,0 +1,19 @@
+{
+    "name": "DreamTech.Leaderboard.Demo",
+    "rootNamespace": "DreamTech.Leaderboard.Demo",
+    "references": [
+        "DreamTech.Leaderboard",
+        "DreamTech.Leaderboard.UI",
+        "Unity.TextMeshPro",
+        "UnityEngine.UI"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": false,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

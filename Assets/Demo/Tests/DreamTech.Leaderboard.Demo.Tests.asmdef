@@ -1,0 +1,24 @@
+{
+    "name": "DreamTech.Leaderboard.Demo.Tests",
+    "rootNamespace": "DreamTech.Leaderboard.Demo.Tests",
+    "references": [
+        "DreamTech.Leaderboard",
+        "DreamTech.Leaderboard.UI",
+        "DreamTech.Leaderboard.Demo",
+        "UnityEngine.TestRunner",
+        "UnityEditor.TestRunner"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "nunit.framework.dll"
+    ],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "UNITY_INCLUDE_TESTS"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
