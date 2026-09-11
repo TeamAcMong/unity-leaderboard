@@ -1,0 +1,39 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 76c3bafeb03cb43c89b24b4e17b31b36, type: 3}
+  m_Name: DefaultLeaderboardThemeConfig
+  m_EditorClassIdentifier: 
+  rowBackgroundColor: {r: 0.36862746, g: 0.58431375, b: 0.9490196, a: 1}
+  localRowBackgroundColor: {r: 1, g: 0.70980394, b: 0.18039216, a: 1}
+  nameColor: {r: 1, g: 1, b: 1, a: 1}
+  localNameColor: {r: 1, g: 1, b: 1, a: 1}
+  scoreColor: {r: 1, g: 0.94509804, b: 0.6901961, a: 1}
+  localScoreColor: {r: 1, g: 1, b: 1, a: 1}
+  glowColor: {r: 1, g: 0.84, b: 0.3, a: 1}
+  badgeIdleColor: {r: 0, g: 0, b: 0, a: 0.22}
+  medalColors:
+  - {r: 1, g: 0.7882353, b: 0.18039216, a: 1}
+  - {r: 0.7764706, g: 0.83137256, b: 0.9019608, a: 1}
+  - {r: 0.8784314, g: 0.5411765, b: 0.30588236, a: 1}
+  firstPlaceColor: {r: 1, g: 0.76862746, b: 0.18039216, a: 1}
+  podiumColor: {r: 1, g: 0.56078434, b: 0.23921569, a: 1}
+  pillColor: {r: 0.23529412, g: 0.7607843, b: 0.36862746, a: 1}
+  avatarSaturation: 0.5
+  avatarValue: 0.92
+  twinkleColor: {r: 1, g: 0.9647059, b: 0.8156863, a: 1}
+  confettiPalette:
+  - {r: 1, g: 0.8352941, b: 0.2901961, a: 1}
+  - {r: 1, g: 0.41960785, b: 0.47843137, a: 1}
+  - {r: 0.36078432, g: 0.8392157, b: 1, a: 1}
+  - {r: 0.5254902, g: 0.9411765, b: 0.5568628, a: 1}
+  - {r: 0.7882353, g: 0.54901963, b: 1, a: 1}
+  - {r: 1, g: 1, b: 1, a: 1}
