@@ -3,6 +3,8 @@
     "rootNamespace": "DreamTech.Leaderboard.Demo",
     "references": [
         "DreamTech.Leaderboard",
+        "DreamTech.Leaderboard.League.Unity",
+        "DreamTech.Leaderboard.League",
         "DreamTech.Leaderboard.UI",
         "Unity.TextMeshPro",
         "UnityEngine.UI"

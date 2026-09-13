@@ -8,4 +8,7 @@ EditorBuildSettings:
   - enabled: 1
     path: Assets/Demo/LeaderboardDemo.unity
     guid: f4f27b3b2b74d4ea3b079ee31884525f
+  - enabled: 1
+    path: Assets/Demo/LeagueDemo.unity
+    guid: b8cd24061ec524d56b48fc366016722c
   m_configObjects: {}

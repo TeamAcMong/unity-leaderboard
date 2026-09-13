@@ -91,7 +91,7 @@ namespace DreamTech.Leaderboard.Demo.EditorTools
             winHost.gameObject.SetActive(false);
 
             EditorSceneManager.SaveScene(scene, ScenePath);
-            EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(ScenePath, true) };
+            LeagueDemoSceneBuilder.RegisterSceneInBuildSettings(ScenePath);
             AssetDatabase.SaveAssets();
             Debug.Log("[Leaderboard Demo] Đã dựng " + ScenePath);
         }
