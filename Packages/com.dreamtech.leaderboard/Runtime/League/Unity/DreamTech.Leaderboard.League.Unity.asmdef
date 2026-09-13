@@ -1,0 +1,17 @@
+{
+    "name": "DreamTech.Leaderboard.League.Unity",
+    "rootNamespace": "DreamTech.Leaderboard.League.Unity",
+    "references": [
+        "DreamTech.Leaderboard",
+        "DreamTech.Leaderboard.League"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

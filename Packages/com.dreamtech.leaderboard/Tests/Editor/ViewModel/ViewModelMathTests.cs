@@ -175,6 +175,66 @@ namespace DreamTech.Leaderboard.Tests
             Assert.IsTrue(Layout.Intersects(5f, top + 124f, top + 500f));
             Assert.IsFalse(Layout.Intersects(5f, top + 124.5f, top + 500f));
         }
+
+        // ------------------------------------------------------------ Divider (dải zone của League)
+
+        private static readonly VirtualListLayout Divided =
+            new VirtualListLayout(124f, 12f, 40f, 56f, new[] { new ListDivider(5, 120f), new ListDivider(25, 80f) });
+
+        [Test]
+        public void Divider_PushesRowsBelow_LeavesRowsAboveUntouched()
+        {
+            Assert.AreEqual(Layout.SlotToTop(4f), Divided.SlotToTop(4f), 1e-3f);
+            Assert.AreEqual(Layout.SlotToTop(5f) + 120f, Divided.SlotToTop(5f), 1e-3f);
+            Assert.AreEqual(Layout.SlotToTop(29f) + 200f, Divided.SlotToTop(29f), 1e-3f);
+            Assert.AreEqual(Layout.ContentHeight(29f) + 200f, Divided.ContentHeight(29f), 1e-3f);
+        }
+
+        [Test]
+        public void Divider_SitsFlushAboveItsRow_AfterRowAboveAndSpacing()
+        {
+            Assert.AreEqual(Divided.SlotToTop(4f) + 124f + 12f, Divided.DividerTop(0), 1e-3f);
+            Assert.AreEqual(Divided.SlotToTop(5f), Divided.DividerTop(0) + 120f, 1e-3f);
+        }
+
+        [Test]
+        public void Divider_RowCrossingIt_MovesContinuously()
+        {
+            // Row đang leo đi qua dải không được giật: bước slot nhỏ thì vị trí cũng chỉ đổi nhỏ.
+            float previous = Divided.SlotToTop(6f);
+            for (float slot = 6f; slot >= 3f; slot -= 0.01f)
+            {
+                float top = Divided.SlotToTop(slot);
+                Assert.LessOrEqual(previous - top, (136f + 120f) * 0.01f + 1e-2f, "slot " + slot);
+                Assert.LessOrEqual(top, previous + 1e-3f, "Phải đơn điệu");
+                previous = top;
+            }
+        }
+
+        [Test]
+        public void Divider_TopVisibleSlot_IsInverseOfSlotToTop()
+        {
+            for (float slot = -0.5f; slot <= 29f; slot += 0.125f)
+            {
+                Assert.AreEqual(slot, Divided.TopVisibleSlot(Divided.SlotToTop(slot)), 1e-3f, "slot " + slot);
+            }
+            for (float slot = 0f; slot <= 29f; slot += 0.5f)
+            {
+                Assert.AreEqual(Layout.TopVisibleSlot(Layout.SlotToTop(slot)), slot, 1e-3f);
+            }
+        }
+
+        [Test]
+        public void Divider_AdjacentSlots_StillInvertible()
+        {
+            var adjacent = new VirtualListLayout(100f, 10f, 0f, 0f, new[] { new ListDivider(3, 40f), new ListDivider(4, 60f) });
+            for (float slot = 0f; slot <= 8f; slot += 0.1f)
+            {
+                Assert.AreEqual(slot, adjacent.TopVisibleSlot(adjacent.SlotToTop(slot)), 1e-3f, "slot " + slot);
+            }
+            Assert.AreEqual(adjacent.SlotToTop(3f), adjacent.DividerTop(0) + 40f, 1e-3f);
+            Assert.AreEqual(adjacent.SlotToTop(4f), adjacent.DividerTop(1) + 60f, 1e-3f);
+        }
     }
 
     [TestFixture]

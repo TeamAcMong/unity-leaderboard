@@ -3,6 +3,47 @@
 Mọi thay đổi đáng kể của package ghi ở đây. Định dạng theo [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 phiên bản theo [Semantic Versioning](https://semver.org/).
 
+## [0.2.0] - 2026-09-13
+
+Thêm module **League**: tier theo mùa, vùng lên/xuống hạng, streak thắng, rương theo hạng. Nằm trong assembly riêng, không
+đụng gì tới leaderboard đang chạy — xoá thư mục `Runtime/League` + `Tests/Editor/League` là gỡ sạch.
+
+### Added
+- Domain thuần C# (`DreamTech.Leaderboard.League`): `LeagueLadder`, `LeagueZoneBands`, `SeasonWindow`, `SeasonResult`,
+  `WinStreakLadder` / `WinStreakState`, `LeagueRewardPackage`, `LeagueGroupSnapshot` (dùng lại `LeaderboardEntry`).
+- Luật cắm-rút, mỗi cái một interface + bản mặc định: `ILeagueZoneRule` (`CountLeagueZoneRule`), `ISeasonOutcomeRule`
+  (`ZoneSeasonOutcomeRule`), `IWinStreakRule` (`StandardWinStreakRule`), `ITrophyRule` (`MultipliedTrophyRule`),
+  `ILeagueRewardTable` (`RankBracketRewardTable`, `EmptyLeagueRewardTable`), `ISeasonSchedule` (`FixedLengthSeasonSchedule`).
+- Port của host: `ILeagueGroupService`, `ILeagueClock`, `ILeagueTextStore`, `ILeagueRewardGranter`, `ILeagueFeatureGate`.
+- `LeagueSystem` + `LeagueSystemBuilder` + `LeagueSystemRegistry`: ghi thắng level không chờ mạng, hàng chờ cúp gửi lại được
+  (idempotent theo grant id), tải trang kèm vùng và rương từng hạng, luồng khép mùa, nhận rương không phát trùng.
+- `SimulatedLeagueGroupService`: nhóm bot chạy offline, tất định theo (seed, mùa, tier, người chơi, thời điểm); cúp bot chỉ
+  tăng theo thời gian. Có sẵn công cụ debug: đặt cúp, đổi bậc, leo hạng (theo hiện tại hoặc giữ tới hết mùa), lỗi mạng giả lập.
+- Adapter: `SystemLeagueClock`, `OffsetLeagueClock` (cheat tua giờ), `ManualLeagueClock`, `InMemoryLeagueTextStore`,
+  `DelegateLeagueRewardGranter`, `DeferredLeagueRewardGranter`, `ManualLeagueFeatureGate`, `DelegateLeagueFeatureGate`.
+- `DreamTech.Leaderboard.League.Unity`: `PlayerPrefsLeagueTextStore` và `LeagueDebugPanel` — bảng thử IMGUI bày mọi thao tác
+  của League, dùng được cả trong dev project lẫn trong game thật khi chưa có UI theo design.
+- 59 test EditMode, trong đó `LeagueGroupServiceContract` là bộ hợp đồng mà MỌI bản cài `ILeagueGroupService` phải qua
+  (viết backend mới thì tạo một lớp con của nó).
+- **League hiển thị bằng chính leaderboard**: `LeagueBoardService` cài `ILeaderboardService` + `IScoreSource` trên một
+  `LeagueSystem`, nên `LeaderboardBoard` / `LeaderboardWidget` chạy trên nhóm mùa này y như mọi bảng khác (ảo hoá, leo hạng,
+  pill ▲N, banner top 3, row dính mép, skip). Điểm do dịch vụ giữ: `SubmitScoreAsync` chỉ đẩy hàng chờ cúp, bỏ qua con số
+  client gửi. Các lượt hỏi gần như cùng lúc được gộp thành một lượt gọi mạng.
+- `LeaderboardRowSkin` trong `LeaderboardThemeConfig` (hạng 1/2/3, row thường, row của mình): nền 9-slice, huy hiệu, bật/tắt
+  số hạng, màu tên/điểm, nền điểm. Skin chỉ tính khi đã gán nền — theme cũ giữ nguyên cách tô màu.
+- `LeaderboardScrollView.SetRankDividers` + `LeaderboardRankDivider`: chèn dải giữa các hạng (Promotion / Demotion...).
+  `VirtualListLayout` có `ListDivider`; row đang leo lướt qua dải liên tục. Không có divider thì toán trùng khít bản cũ.
+- `ILeaderboardRowDecorator`: component trên prefab row được gọi lại mỗi lần row bind (kể cả khi hạng đổi giữa animation) để
+  game gắn nội dung riêng (rương theo hạng, cờ...). `LeaderboardEntryView` thêm slot tuỳ chọn `scoreBackgroundImage`.
+
+### Changed
+- `LeaderboardPrefabValidator`: `scoreBackgroundImage`, `avatarImage`, `avatarInitialText` là slot tuỳ chọn (row của game có
+  avatar thật không cần avatar placeholder).
+
+### Tests
+- Tổng 171 test EditMode + 10 PlayMode (demo). Xanh trên Unity 6000.6.0f1 (171/171 EditMode, 10/10 PlayMode) và Unity 2022.3.62f2
+  + TMP 3.0.7 (171/171 EditMode). Thêm: adapter League → `LeaderboardBoard` → `RankUp`, toán divider, smoke test scene demo League.
+
 ## [0.1.0] - 2026-09-11
 
 Bản đầu. Viết lại từ package tham khảo `Wolffun.Leaderboard` v3 ("premium smooth"), giữ hướng thẩm mỹ và công thức

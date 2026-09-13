@@ -46,13 +46,17 @@ Packages/com.dreamtech.leaderboard/   ← package (thứ được phát hành)
   Runtime/Core        DreamTech.Leaderboard            C# thuần: domain, port, board, Mock
   Runtime/ViewModel   DreamTech.Leaderboard.ViewModel  C# thuần: RowState, RevealTimeline, toán
   Runtime/UI          DreamTech.Leaderboard.UI         LeaderboardWidget, list ảo hoá, hiệu ứng, config
+  Runtime/League      DreamTech.Leaderboard.League     C# thuần: tier theo mùa, vùng lên/xuống, streak, rương, mô phỏng bot
+  Runtime/League/Unity DreamTech.Leaderboard.League.Unity  adapter cần UnityEngine (PlayerPrefs)
   Editor              DreamTech.Leaderboard.Editor     sinh art/âm tạm, prefab mặc định, validator
-  Tests/Editor        99 test EditMode
+  Tests/Editor        158 test EditMode (99 leaderboard + 59 League)
 Assets/Demo/                          ← scene demo + test PlayMode (không đi theo package)
   LeaderboardDemo.unity               1 board, 3 host: màn riêng / popup / khối trong màn Win
   Scripts/LeaderboardDemo.cs          composition root + nút: +3, +12, +300, Top 3, #1, New, Best, Same, Fail next, Slow x0.1
-  Editor/LeaderboardDemoSceneBuilder  Tools/DreamTech/Leaderboard/Demo/Build Demo Scene
-  Tests/                              5 test PlayMode chạy scene thật
+  LeagueDemo.unity                    bàn thử League (IMGUI, chưa có art)
+  Scripts/LeagueDemo.cs               composition root + nút: thắng/thoát/thua/hồi sinh, tua giờ, khép mùa, nhận rương
+  Editor/*SceneBuilder                Tools/DreamTech/Leaderboard/Demo/Build (League) Demo Scene
+  Tests/                              10 test PlayMode chạy scene thật
 deploy.sh, DEPLOY_UPM_SUBTREE.md      ← phát hành bằng git subtree split + tag
 ```
 
@@ -60,6 +64,7 @@ deploy.sh, DEPLOY_UPM_SUBTREE.md      ← phát hành bằng git subtree split +
 
 1. Mở repo bằng **Unity 6000.6.0f1** (hoặc Unity 6 mới hơn).
 2. Mở `Assets/Demo/LeaderboardDemo.unity` → Play → bấm nút ở dải đáy. Chạm vào bảng trong lúc diễn = skip.
+   Thử League: mở `Assets/Demo/LeagueDemo.unity` → Play (xem mục dưới).
 3. Test:
    ```bash
    Unity -batchmode -nographics -projectPath . -runTests -testPlatform EditMode -testResults TestResults/editmode.xml
@@ -73,7 +78,31 @@ Dựng lại scene demo sau khi đổi bố cục host:
 
 ```bash
 Unity -batchmode -nographics -projectPath . -executeMethod DreamTech.Leaderboard.Demo.EditorTools.LeaderboardDemoSceneBuilder.BuildFromCommandLine
+Unity -batchmode -nographics -quit -projectPath . -executeMethod DreamTech.Leaderboard.Demo.EditorTools.LeagueDemoSceneBuilder.BuildFromCommandLine
 ```
+
+## 🏆 Bàn thử League
+
+`Assets/Demo/LeagueDemo.unity` → Play. Chưa có art nên bảng vẽ bằng IMGUI: mục đích là thử **luật và luồng**, không phải giao diện.
+
+| Nút | Thử điều gì |
+|---|---|
+| Thắng thường / khó / siêu khó | Cúp theo độ khó × hệ số streak, cộng ngay không chờ mạng |
+| Thoát level / Thua hẳn / Hồi sinh | Luật streak: thoát và thua hẳn thì mất, hồi sinh thì giữ. Dòng "Thoát bây giờ có mất streak" là thứ popup cảnh báo sẽ hỏi |
+| Tua +1h / +6h / → hết mùa | Đồng hồ có độ lệch: đếm ngược mùa, khép mùa, mùa mới |
+| Lên hạng #1 / Giữ #1 hết mùa | "Lên hạng #1" chỉ đủ #1 lúc này (bot còn kiếm tiếp nên sẽ trôi); "Giữ #1 hết mùa" mới lên hạng được |
+| Lỗi mạng lần sau | Cúp nằm lại hàng chờ, lần gọi sau gửi lại, không cộng trùng |
+| Khoá League | Cổng tính năng: đang khoá thì thắng cũng không cộng gì |
+| Xoá dữ liệu | Xoá PlayerPrefs của demo và đưa đồng hồ về giờ thật |
+
+Bảng bên trái là nhóm: dải Promotion / Demotion chèn đúng chỗ design vẽ, `[chest.*]` là rương sẽ nhận nếu mùa kết thúc ngay
+lúc đó, `➤` là dòng của bạn. Khi mùa kết thúc, hộp "KẾT QUẢ MÙA" hiện ra với hai nút **Xem xong** và **Nhận rương**; quà chạy
+qua granter vào "Ví" ở cột phải.
+
+Trạng thái lưu bằng PlayerPrefs nên tắt Play rồi Play lại vẫn còn streak, cúp và mùa đang chạy.
+
+Chỉnh số ở Inspector của GameObject `LeagueDemo`: số người mỗi nhóm, số lên/xuống hạng, độ dài mùa (mặc định 24h cho dễ thử;
+design dùng theo tuần), cúp theo độ khó, hệ số từng bậc streak, độ trễ mạng giả lập.
 
 ## 🚢 Phát hành
 

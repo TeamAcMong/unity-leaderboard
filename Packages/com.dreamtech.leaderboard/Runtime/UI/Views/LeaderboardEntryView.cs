@@ -35,6 +35,8 @@ namespace DreamTech.Leaderboard.UI
         [SerializeField] private TMP_Text avatarInitialText;
         [SerializeField] private TMP_Text nameText;
         [SerializeField] private TMP_Text scoreText;
+        [Tooltip("Nền sau điểm (tuỳ chọn). Chỉ đổi sprite khi theme có LeaderboardRowSkin.ScoreBackground.")]
+        [SerializeField] private Image scoreBackgroundImage;
 
         [Header("Hiệu ứng")]
         [SerializeField] private RectTransform shineTransform;
@@ -44,6 +46,7 @@ namespace DreamTech.Leaderboard.UI
         [SerializeField] private TMP_Text pillText;
 
         private bool _isInitialized;
+        private ILeaderboardRowDecorator[] _decorators;
         private RectTransform _rectTransform;
         private RectTransform _pillTransform;
         private Vector2 _pillBasePosition;
@@ -62,6 +65,12 @@ namespace DreamTech.Leaderboard.UI
         private string _shownName;
         private int _shownStyle;
         private int _shownMedal;
+
+        /// <summary>Theme cấp sprite huy hiệu riêng — khi đó không tô màu đè lên art của game.</summary>
+        private bool _hasSkinBadge;
+
+        /// <summary>Hạng không có huy chương (row "..." và mọi hạng ngoài top 3).</summary>
+        private const int NoMedal = -1;
         private int _shownPillVersion;
 
         private bool _isPillVisible;
@@ -108,15 +117,22 @@ namespace DreamTech.Leaderboard.UI
             if (row.IsGap)
             {
                 if (gapText && gapText.text != context.Text.Gap) gapText.text = context.Text.Gap;
-                ApplyStyle(false, context.Theme);
+                ApplyStyle(false, NoMedal, context.Theme);
+                NotifyDecorators(row, context);
                 return;
             }
 
-            ApplyStyle(row.IsLocalPlayer, context.Theme);
+            ApplyStyle(row.IsLocalPlayer, context.TierRule.MedalIndex(row.DisplayRank), context.Theme);
             ApplyIdentity(row, context);
             ApplyRank(row.DisplayRank, context);
             ApplyScore(row.DisplayScore);
             ApplyPillContent(row, context);
+            NotifyDecorators(row, context);
+        }
+
+        private void NotifyDecorators(RowState row, LeaderboardRenderContext context)
+        {
+            for (int index = 0; index < _decorators.Length; index++) _decorators[index].OnRowBound(row, context);
         }
 
         public void Unbind()
@@ -148,6 +164,7 @@ namespace DreamTech.Leaderboard.UI
         {
             if (_isInitialized) return;
             _isInitialized = true;
+            _decorators = GetComponentsInChildren<ILeaderboardRowDecorator>(true);
 
             if (pillGroup)
             {
@@ -201,14 +218,46 @@ namespace DreamTech.Leaderboard.UI
 
         // ---------------------------------------------------------------- Nội dung tĩnh
 
-        private void ApplyStyle(bool isLocalPlayer, LeaderboardThemeConfig theme)
+        /// <summary>
+        /// Bộ mặt của row: nền, màu chữ, glow. Phụ thuộc cả "có phải mình không" lẫn hạng đang hiện, vì leo lên top 3 thì row
+        /// phải đổi mặt ngay giữa animation. Khoá cache gộp cả hai để mỗi lần đổi thật mới ghi xuống component.
+        ///
+        /// <para>Theme có khai báo <see cref="LeaderboardRowSkin"/> thì dùng art của game (9-slice + huy hiệu rời);
+        /// không thì giữ đường cũ — một sprite grayscale tô màu theo theme.</para>
+        /// </summary>
+        private void ApplyStyle(bool isLocalPlayer, int medalIndex, LeaderboardThemeConfig theme)
         {
-            int style = isLocalPlayer ? 1 : 0;
+            int style = (medalIndex + 1) * 2 + (isLocalPlayer ? 1 : 0);
             if (style == _shownStyle) return;
             _shownStyle = style;
-            if (backgroundImage) backgroundImage.color = isLocalPlayer ? theme.LocalRowBackgroundColor : theme.RowBackgroundColor;
-            if (nameText) nameText.color = isLocalPlayer ? theme.LocalNameColor : theme.NameColor;
-            if (scoreText) scoreText.color = isLocalPlayer ? theme.LocalScoreColor : theme.ScoreColor;
+
+            LeaderboardRowSkin skin = theme.HasRowSkins ? theme.RowSkin(medalIndex, isLocalPlayer) : null;
+            if (skin != null)
+            {
+                if (backgroundImage && skin.Background)
+                {
+                    backgroundImage.sprite = skin.Background;
+                    backgroundImage.color = Color.white;
+                }
+                if (nameText) nameText.color = skin.NameColor;
+                if (scoreText) scoreText.color = skin.ScoreColor;
+                if (scoreBackgroundImage && skin.ScoreBackground) scoreBackgroundImage.sprite = skin.ScoreBackground;
+                _hasSkinBadge = skin.Badge != null;
+                if (rankBadgeImage && _hasSkinBadge)
+                {
+                    rankBadgeImage.sprite = skin.Badge;
+                    rankBadgeImage.color = Color.white;
+                }
+                if (rankText) SetActive(rankText.gameObject, skin.ShowRankNumber);
+            }
+            else
+            {
+                _hasSkinBadge = false;
+                if (backgroundImage) backgroundImage.color = isLocalPlayer ? theme.LocalRowBackgroundColor : theme.RowBackgroundColor;
+                if (nameText) nameText.color = isLocalPlayer ? theme.LocalNameColor : theme.NameColor;
+                if (scoreText) scoreText.color = isLocalPlayer ? theme.LocalScoreColor : theme.ScoreColor;
+            }
+
             if (glowImage)
             {
                 glowImage.gameObject.SetActive(isLocalPlayer);
@@ -242,7 +291,7 @@ namespace DreamTech.Leaderboard.UI
             int medal = context.TierRule.MedalIndex(rank);
             if (medal == _shownMedal) return;
             _shownMedal = medal;
-            if (rankBadgeImage) rankBadgeImage.color = context.Theme.MedalColor(medal);
+            if (rankBadgeImage && !_hasSkinBadge) rankBadgeImage.color = context.Theme.MedalColor(medal);
         }
 
         private void ApplyScore(long score)

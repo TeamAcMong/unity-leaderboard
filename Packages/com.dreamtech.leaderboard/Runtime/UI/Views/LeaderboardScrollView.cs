@@ -71,6 +71,10 @@ namespace DreamTech.Leaderboard.UI
         private float _stickyVisibility;
         private int _stickySide;
 
+        private readonly List<LeaderboardRankDivider> _rankDividers = new List<LeaderboardRankDivider>();
+        private readonly List<ListDivider> _resolvedDividers = new List<ListDivider>();
+        private readonly List<RectTransform> _resolvedDividerViews = new List<RectTransform>();
+
         public bool FollowLocalRow { get; set; }
 
         /// <summary>Không bao giờ thu hồi view của row người chơi (bật trong lúc diễn).</summary>
@@ -89,7 +93,26 @@ namespace DreamTech.Leaderboard.UI
         public float TopPadding => topPadding;
         public float BottomPadding => bottomPadding;
 
-        public VirtualListLayout Layout => new VirtualListLayout(rowHeight, spacing, topPadding, bottomPadding);
+        public VirtualListLayout Layout => _resolvedDividers.Count == 0
+            ? new VirtualListLayout(rowHeight, spacing, topPadding, bottomPadding)
+            : new VirtualListLayout(rowHeight, spacing, topPadding, bottomPadding, _resolvedDividers);
+
+        /// <summary>
+        /// Chèn dải giữa các hạng (Promotion / Demotion của League, tiêu đề nhóm...). View do game cấp, là con của
+        /// <see cref="Content"/>; list chỉ đặt vị trí và bật/tắt. Dải chỉ hiện khi đúng hạng ranh giới đang có trong bảng —
+        /// cửa sổ tải không chạm tới ranh giới thì dải ẩn chứ không đặt bừa.
+        ///
+        /// <para>Gọi lúc nào cũng được (trước hoặc sau khi có model); mỗi lần bảng đổi cấu trúc list tự tính lại.</para>
+        /// </summary>
+        public void SetRankDividers(IReadOnlyList<LeaderboardRankDivider> dividers)
+        {
+            _rankDividers.Clear();
+            if (dividers != null)
+            {
+                for (int index = 0; index < dividers.Count; index++) _rankDividers.Add(dividers[index]);
+            }
+            RefreshContentHeight();
+        }
 
         public int VisibleRowCapacity => Layout.VisibleRowCapacity(ViewportHeight);
 
@@ -411,9 +434,74 @@ namespace DreamTech.Leaderboard.UI
         private void RefreshContentHeight()
         {
             if (!content) return;
+            ResolveDividers();
             float height = _model != null ? Layout.ContentHeight(_model.MaximumSlot) : 0f;
             if (Mathf.Abs(content.sizeDelta.y - height) > 0.01f) content.sizeDelta = new Vector2(content.sizeDelta.x, height);
             SetScrollY(GetScrollY());
+        }
+
+        /// <summary>
+        /// Quy hạng ranh giới ra slot theo bảng cuối cùng (<see cref="BoardScene.Rows"/>: index = slot lúc đứng yên), rồi đặt view.
+        /// Dải nằm dưới mọi row (sibling đầu) để row đang leo lướt ĐÈ lên dải chứ không chui xuống.
+        /// </summary>
+        private void ResolveDividers()
+        {
+            _resolvedDividers.Clear();
+            _resolvedDividerViews.Clear();
+            if (_rankDividers.Count == 0) return;
+
+            IReadOnlyList<BoardRow> sceneRows = _model != null ? _model.Scene.Rows : null;
+            float maximumSlot = _model != null ? _model.MaximumSlot : -1f;
+
+            for (int index = 0; index < _rankDividers.Count; index++)
+            {
+                LeaderboardRankDivider divider = _rankDividers[index];
+                int slot = sceneRows != null ? SlotOfRank(sceneRows, divider.BeforeRank) : -1;
+                // Đuôi bảng đang bị cắt tạm lúc diễn thì dải nằm ngoài phần đang có cũng ẩn theo.
+                bool isVisible = slot >= 0 && slot <= maximumSlot && !ContainsSlot(slot);
+                if (divider.View != null && divider.View.gameObject.activeSelf != isVisible) divider.View.gameObject.SetActive(isVisible);
+                if (!isVisible) continue;
+
+                int insertAt = _resolvedDividers.Count;
+                while (insertAt > 0 && _resolvedDividers[insertAt - 1].BeforeSlot > slot) insertAt--;
+                _resolvedDividers.Insert(insertAt, new ListDivider(slot, divider.Height));
+                _resolvedDividerViews.Insert(insertAt, divider.View);
+            }
+
+            VirtualListLayout layout = Layout;
+            for (int index = _resolvedDividerViews.Count - 1; index >= 0; index--)
+            {
+                RectTransform view = _resolvedDividerViews[index];
+                if (view == null) continue;
+                view.anchorMin = new Vector2(view.anchorMin.x, 1f);
+                view.anchorMax = new Vector2(view.anchorMax.x, 1f);
+                float height = _resolvedDividers[index].Height;
+                float top = layout.DividerTop(index);
+                view.sizeDelta = new Vector2(view.sizeDelta.x, height);
+                view.anchoredPosition = new Vector2(view.anchoredPosition.x, -(top + height * (1f - view.pivot.y)));
+                view.SetAsFirstSibling();
+            }
+        }
+
+        private bool ContainsSlot(int slot)
+        {
+            for (int index = 0; index < _resolvedDividers.Count; index++)
+            {
+                if (_resolvedDividers[index].BeforeSlot == slot) return true;
+            }
+            return false;
+        }
+
+        private static int SlotOfRank(IReadOnlyList<BoardRow> rows, int rank)
+        {
+            for (int index = 0; index < rows.Count; index++)
+            {
+                BoardRow row = rows[index];
+                if (row.IsGap || row.Entry == null) continue;
+                if (row.Entry.Rank == rank) return index;
+                if (row.Entry.Rank > rank) return -1;
+            }
+            return -1;
         }
 
         private void OrderLocalRowOnTop()
