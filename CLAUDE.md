@@ -82,6 +82,28 @@ Vị trí row = f(`RowState.Slot`). Không LayoutGroup/ContentSizeFitter trong l
 
 **Thời gian:** mọi animation dùng `Time.unscaledDeltaTime` × `DebugTimeScale`.
 
+### Module League (`Runtime/League`, đang làm trên nhánh `feature/league`)
+
+Tier theo mùa, vùng lên/xuống, streak thắng, rương theo hạng. Người dùng chốt: **mọi phần phải cắm-rút được như Lego**.
+- **Tách assembly.** `DreamTech.Leaderboard.League` (noEngineReferences, chỉ tham chiếu Core) + test riêng
+  `DreamTech.Leaderboard.League.Tests`. Core/ViewModel/UI của leaderboard KHÔNG được tham chiếu League. Xoá hai thư mục League là
+  gỡ sạch.
+- **Ổ cắm = port, lắp ở `LeagueSystemBuilder`:**
+  - `ILeagueGroupService` (bot mô phỏng / backend), `ISeasonSchedule`, `ILeagueClock`, `ITrophyRule`, `IWinStreakRule`,
+    `ILeagueRewardGranter`, `ILeagueTextStore`, `ILeagueFeatureGate`.
+  - Luật nhóm (`ILeagueZoneRule`, `ISeasonOutcomeRule`, `ILeagueRewardTable`) nằm trong `LeagueRules`, dùng chung cho hệ thống
+    và dịch vụ mô phỏng để dải zone trên màn hình và kết quả thật không lệch nhau.
+  - Port chỉ thêm, không đổi chữ ký.
+- **Mọi bản cài `ILeagueGroupService` phải có lớp con của `LeagueGroupServiceContract`** (5 test hành vi). Interface không đủ.
+- **Thắng level ghi ngay, không chờ mạng:** grant cúp có id duy nhất xếp hàng, `FlushPendingTrophiesAsync` gửi lại được. Grant
+  của mùa vừa hết vẫn tính cho mùa đó.
+- **Quà ghi vào hàng chờ trước khi đưa cho game.** Granter trả false thì giữ lại, phát ở `GrantPendingRewards`.
+- **Streak:** UI cảnh báo hỏi `WouldLoseStreak(event)`, không tự đoán luật. Tên là `WinStreak` (game host có thể đã có "streak"
+  khác).
+- **Lưu trạng thái** bằng `LeagueTextRecord` (khoá=giá trị, có `format`). Chuỗi hỏng → bắt đầu lại, không ném lỗi.
+- **Mô phỏng tất định:** cúp bot = f(seed, mùa, tier, người chơi, thời điểm), chỉ tăng theo thời gian. Hash dùng FNV-1a, không
+  dùng `string.GetHashCode`.
+
 ## Text tên người chơi — luật cứng
 
 Ellipsis, KHÔNG Bold (kể cả Bold giả lập qua `fontStyle`), `richText = false`, NoWrap. Font tên phải có `…` (U+2026).
@@ -121,3 +143,7 @@ lại validator.
   kiểm; test xanh trên Unity 6.6 và Unity 2022.3 (TMP 3.0.7 và 3.2.0-pre.12).
 - **Tiếp theo (cần người dùng quyết):** tự submit khi thắng, khối trong màn Win / Home, adapter backend thật, SFX thật,
   rank tụt "▼N", CI chạy test tự động.
+- **League (nhánh `feature/league`, chưa commit):**
+  - Core + mô phỏng + 59 test. Unity 6000.6: 158/158; Unity 2022.3 + TMP 3.0.7: 158/158.
+  - Còn lại: ViewModel, UI, adapter PlayerPrefs, README/CHANGELOG/DESIGN_NOTES.
+  - Kế hoạch và design phân tích từ Figma nằm ở project Icon Match: `Assets/IconMatch/Docs/LEAGUE_PLAN.html`.

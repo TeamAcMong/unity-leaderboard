@@ -1,0 +1,25 @@
+{
+    "name": "DreamTech.Leaderboard.League.Tests",
+    "rootNamespace": "DreamTech.Leaderboard.League.Tests",
+    "references": [
+        "DreamTech.Leaderboard",
+        "DreamTech.Leaderboard.League",
+        "UnityEngine.TestRunner",
+        "UnityEditor.TestRunner"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "nunit.framework.dll"
+    ],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "UNITY_INCLUDE_TESTS"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

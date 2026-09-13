@@ -1,7 +1,33 @@
+using System;
 using UnityEngine;
 
 namespace DreamTech.Leaderboard.UI
 {
+    /// <summary>
+    /// Bộ mặt của một kiểu row khi game có art riêng cho từng hạng (hạng 1 vàng, hạng 2 bạc, row của mình nổi bật...).
+    /// Để trống <see cref="Background"/> thì row giữ cách cũ: một sprite duy nhất tô màu theo theme.
+    ///
+    /// <para>Sprite nền nên là 9-slice — row co giãn theo bề rộng list, cắt ảnh nguyên tấm sẽ méo góc bo.</para>
+    /// </summary>
+    [Serializable]
+    public sealed class LeaderboardRowSkin
+    {
+        [Tooltip("Nền row, nên là 9-slice. Để trống = skin này không được dùng (row rơi về skin khác hoặc cách tô màu cũ).")]
+        public Sprite Background;
+
+        [Tooltip("Huy hiệu hạng (hạng 1–3). Để trống thì badge giữ sprite sẵn có và chỉ đổi màu.")]
+        public Sprite Badge;
+
+        [Tooltip("Tắt khi huy hiệu đã vẽ sẵn số hạng.")]
+        public bool ShowRankNumber = true;
+
+        [Tooltip("Nền sau điểm (pill), nên là 9-slice. Để trống thì giữ sprite sẵn có trên prefab.")]
+        public Sprite ScoreBackground;
+
+        public Color NameColor = Color.white;
+        public Color ScoreColor = Color.white;
+    }
+
     /// <summary>Màu sắc của leaderboard. Sprite mặc định là grayscale nên chỉ cần đổi màu ở đây để re-skin.</summary>
     [CreateAssetMenu(menuName = "DreamTech/Leaderboard/Theme Config", fileName = "LeaderboardThemeConfig")]
     public sealed class LeaderboardThemeConfig : ScriptableObject
@@ -24,6 +50,13 @@ namespace DreamTech.Leaderboard.UI
             new Color32(0xC6, 0xD4, 0xE6, 0xFF),
             new Color32(0xE0, 0x8A, 0x4E, 0xFF),
         };
+
+        [Header("Art theo hạng (để trống = chỉ tô màu như cũ)")]
+        [Tooltip("Row của hạng 1, 2, 3 — theo thứ tự. Thiếu phần tử nào thì hạng đó rơi về row thường.")]
+        [SerializeField] private LeaderboardRowSkin[] medalRowSkins = new LeaderboardRowSkin[0];
+        [SerializeField] private LeaderboardRowSkin defaultRowSkin;
+        [Tooltip("Row của chính người chơi. Ưu tiên cao hơn huy chương: đứng nhất thì vẫn là row 'mình'.")]
+        [SerializeField] private LeaderboardRowSkin localRowSkin;
 
         [Header("Tier (banner, tia sáng)")]
         [SerializeField] private Color firstPlaceColor = new Color32(0xFF, 0xC4, 0x2E, 0xFF);
@@ -55,6 +88,44 @@ namespace DreamTech.Leaderboard.UI
         public float AvatarValue => avatarValue;
         public Color TwinkleColor => twinkleColor;
         public Color[] ConfettiPalette => confettiPalette;
+
+        /// <summary>True khi theme có art riêng cho row; false thì row chạy đường tô màu như trước.</summary>
+        public bool HasRowSkins
+        {
+            get
+            {
+                if (IsDeclared(localRowSkin) || IsDeclared(defaultRowSkin)) return true;
+                if (medalRowSkins == null) return false;
+                for (int index = 0; index < medalRowSkins.Length; index++)
+                {
+                    if (IsDeclared(medalRowSkins[index])) return true;
+                }
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Bộ mặt của một row. Row của chính người chơi được ưu tiên trước huy chương — đứng nhất thì vẫn phải nhận ra ngay
+        /// đâu là mình. Không khai báo skin nào khớp thì trả null và row quay về cách tô màu cũ.
+        /// </summary>
+        public LeaderboardRowSkin RowSkin(int medalIndex, bool isLocalPlayer)
+        {
+            if (isLocalPlayer && IsDeclared(localRowSkin)) return localRowSkin;
+            if (medalIndex >= 0 && medalRowSkins != null && medalIndex < medalRowSkins.Length && IsDeclared(medalRowSkins[medalIndex]))
+            {
+                return medalRowSkins[medalIndex];
+            }
+            return IsDeclared(defaultRowSkin) ? defaultRowSkin : null;
+        }
+
+        /// <summary>
+        /// Unity luôn tạo sẵn instance cho field class [Serializable], nên "chưa khai báo" không bao giờ là null — skin chỉ được
+        /// tính khi đã gán nền. Nhờ vậy theme cũ (không đụng tới skin) giữ nguyên cách tô màu.
+        /// </summary>
+        private static bool IsDeclared(LeaderboardRowSkin skin)
+        {
+            return skin != null && skin.Background != null;
+        }
 
         /// <summary>Màu badge theo chỉ số huy chương; -1 hoặc vượt số màu = màu nghỉ.</summary>
         public Color MedalColor(int medalIndex)

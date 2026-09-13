@@ -18,6 +18,12 @@ namespace DreamTech.Leaderboard.EditorTools
         private static readonly HashSet<string> OptionalWidgetFields = new HashSet<string> { "titleText", "motionConfig", "themeConfig", "textConfig" };
         private static readonly HashSet<string> OptionalScrollFields = new HashSet<string> { "sunburst", "stickyAnchor", "stickyGroup", "stickyButton" };
 
+        /// <summary>
+        /// Nền điểm chỉ dùng khi theme có skin theo hạng. Avatar tô màu theo id + chữ cái đầu là placeholder: game có avatar thật
+        /// (sprite, hoặc decorator tải ảnh) để trống hai slot này là đúng.
+        /// </summary>
+        private static readonly HashSet<string> OptionalRowFields = new HashSet<string> { "scoreBackgroundImage", "avatarImage", "avatarInitialText" };
+
         [MenuItem("Tools/DreamTech/Leaderboard/Validate Default Prefabs")]
         private static void ValidateFromMenu()
         {
@@ -43,7 +49,7 @@ namespace DreamTech.Leaderboard.EditorTools
                 return issues;
             }
 
-            CollectMissingReferences(row, null, issues);
+            CollectMissingReferences(row, OptionalRowFields, issues);
             TMP_Text nameText = row.NameText;
             if (nameText != null)
             {

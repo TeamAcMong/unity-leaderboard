@@ -53,6 +53,8 @@ define `DREAMTECH_LEADERBOARD_TMP_WRAPPING_MODE` do `versionDefines` của asmde
 | `DreamTech.Leaderboard` (`Runtime/Core`) | C# thuần, `noEngineReferences` | — | Domain (entry, hạng, tier, thay đổi hạng, dựng danh sách row), port, `LeaderboardBoard`, Mock backend |
 | `DreamTech.Leaderboard.ViewModel` (`Runtime/ViewModel`) | C# thuần, `noEngineReferences` | Core | `RowState`, `BoardModel`, `RankUpPlanner`, `RevealTimeline`, toán (easing, spring, SmoothDamp), layout list ảo, vị trí banner |
 | `DreamTech.Leaderboard.UI` (`Runtime/UI`) | uGUI + TMP | Core, ViewModel | `LeaderboardWidget`, list ảo hoá, row, hiệu ứng, config SO, sink âm thanh/UnityEvent, lưu snapshot PlayerPrefs |
+| `DreamTech.Leaderboard.League` (`Runtime/League`) | C# thuần, `noEngineReferences` | Core | **Module League**: tier theo mùa, vùng lên/xuống, streak thắng, rương theo hạng, nhóm bot mô phỏng |
+| `DreamTech.Leaderboard.League.Unity` (`Runtime/League/Unity`) | UnityEngine | Core, League | `PlayerPrefsLeagueTextStore`, `LeagueDebugPanel` (bảng thử IMGUI) |
 | `DreamTech.Leaderboard.Editor` (`Editor`) | Editor | cả ba | Sinh art/âm tạm, tạo prefab mặc định, validator prefab |
 | `DreamTech.Leaderboard.Tests` / `.UI.Tests` (`Tests/Editor`) | EditMode NUnit | — | Test thuần Core + ViewModel, test contract prefab + vòng đời widget |
 
@@ -294,6 +296,7 @@ Chạy trong Test Runner (EditMode) hoặc qua MCP `tests-run`:
 |---|---|
 | `DreamTech.Leaderboard.Tests` | Domain (hạng, tier, thay đổi hạng, dựng row, kế hoạch tải), Mock, board (kéo điểm, chỉ submit khi tốt hơn, retry, huỷ, 1 reveal/board), timeline (skip ở **mọi tick** cho 120→108, 900→600, 300→5), toán |
 | `DreamTech.Leaderboard.UI.Tests` | Contract prefab, row view dùng lại vẫn diễn đúng pha, vòng đời widget (Arm/Present/Disarm, exception → `Failed`), chữ trên avatar |
+| `DreamTech.Leaderboard.League.Tests` | Luật League (vùng, kết thúc mùa, streak, cúp, bảng thưởng, lịch mùa), codec lưu trạng thái, `LeagueGroupServiceContract`, nhóm mô phỏng, `LeagueSystem` |
 | `DreamTech.Leaderboard.Demo.Tests` (chỉ trong dev repo, PlayMode) | Chạy scene demo thật: leo 12 hạng ở cả 3 host, skip trước hạ cánh, đóng trước hạ cánh rồi diễn lại, #1 + người chơi mới, lỗi backend |
 
 Scene đang mở phải được lưu trước khi chạy test qua MCP. Chạy bằng dòng lệnh (dev repo):
@@ -302,3 +305,45 @@ Scene đang mở phải được lưu trước khi chạy test qua MCP. Chạy b
 Unity -batchmode -nographics -projectPath . -runTests -testPlatform EditMode -testResults TestResults/editmode.xml
 Unity -batchmode -nographics -projectPath . -runTests -testPlatform PlayMode -testResults TestResults/playmode.xml
 ```
+
+---
+
+## 9. Module League
+
+Tier theo mùa (Bronze → Diamond), vùng lên/xuống hạng, streak thắng, rương theo hạng. Nằm ở assembly riêng: không dùng thì
+không tốn gì, xoá `Runtime/League` + `Tests/Editor/League` là gỡ sạch, leaderboard vẫn chạy.
+
+```csharp
+var rules = new LeagueRules(ladder, rewardTable: rewardTable);
+LeagueSystem league = new LeagueSystemBuilder("main", rules, streakLadder)
+    .WithGroupService(new SimulatedLeagueGroupService(options, rules, clock, store)) // ← đổi sang backend thật ở đây
+    .WithSchedule(new FixedLengthSeasonSchedule(anchorUtc, TimeSpan.FromDays(7)))
+    .WithClock(clock)                    // SystemLeagueClock, hoặc OffsetLeagueClock để cheat tua giờ
+    .WithTextStore(store)                // PlayerPrefsLeagueTextStore, hoặc save system của game
+    .WithRewardGranter(rewardGranter)    // phát quà vào kho đồ của game
+    .WithFeatureGate(featureGate)        // tính năng đã mở chưa
+    .WithTrophyRule(new MultipliedTrophyRule(new[] { 10, 15, 20 }))
+    .WithWinStreakRule(new StandardWinStreakRule())
+    .Build();
+LeagueSystemRegistry.Register(league);
+```
+
+Game gọi:
+
+| Việc | Gọi gì |
+|---|---|
+| Thắng level | `RecordLevelWin(new LevelWinContext(level, difficulty))` — ghi ngay, không chờ mạng |
+| Thoát / thua hẳn / chơi lại / hồi sinh | `RecordStreakEvent(...)`; popup cảnh báo hỏi `WouldLoseStreak(...)` trước |
+| Mở trang League | `LoadPageAsync` — trả dòng kèm vùng lên/xuống và rương từng hạng, số cúp chưa gửi |
+| Về Home / mở app | `GetPendingSeasonResultAsync` → popup kết quả → `AcknowledgeSeasonResultAsync` → `ClaimSeasonRewardAsync` |
+| Kho đồ vừa sẵn sàng | `GrantPendingRewards()` |
+
+Luật nào cũng thay được bằng một dòng `With…` hoặc tham số của `LeagueRules`: vùng lên/xuống, kết quả mùa, streak, cúp mỗi
+trận, bảng thưởng, lịch mùa.
+
+**Viết adapter backend mới:** cài `ILeagueGroupService` rồi tạo một lớp con của `LeagueGroupServiceContract` trong test —
+5 test đó là hợp đồng hành vi (sort + rank liên tục, cộng cúp idempotent, cúp gửi trễ sau khi hết mùa vẫn tính cho mùa cũ,
+rương nhận đúng một lần, kết quả còn chờ tới khi xem xong và nhận xong).
+
+**Bảng thử khi chưa có UI:** `LeagueDebugPanel.Create(league, simulation, clock, featureGate)` bày mọi thao tác ra nút IMGUI
+và vẽ bảng nhóm. Dùng trong dev project (`Assets/Demo/LeagueDemo.unity`) hoặc bật bằng cheat ngay trong game thật.
