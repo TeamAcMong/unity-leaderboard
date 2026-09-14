@@ -30,22 +30,86 @@ namespace DreamTech.Leaderboard.League
         }
     }
 
-    /// <summary>Bọc một đồng hồ khác và cộng thêm độ lệch — cheat "tua tới cuối mùa" trong build thật.</summary>
+    /// <summary>
+    /// Bọc một đồng hồ khác và cộng thêm độ lệch — cheat "tua tới cuối mùa" trong build thật.
+    ///
+    /// <para>Hai cách dựng: không có nơi lưu thì độ lệch chỉ sống trong RAM (test, demo); có nơi lưu thì độ lệch được nạp lúc
+    /// tạo và ghi lại mỗi lần đổi. Cheat tua giờ trong game thật phải dùng bản có nơi lưu: độ lệch mất khi tắt app nghĩa là
+    /// giờ của League lùi về giờ thật, dịch vụ nhóm thấy "mùa theo đồng hồ" cũ hơn mùa đang giữ. Muốn chắc chắn League không
+    /// bao giờ lùi (kể cả khi người chơi chỉnh giờ máy) thì bọc tiếp bằng <see cref="MonotonicLeagueClock"/>.</para>
+    /// </summary>
     public sealed class OffsetLeagueClock : ILeagueClock
     {
-        private readonly ILeagueClock _inner;
+        private const int StoreFormat = 1;
+        private const string OffsetTicksKey = "offset.ticks";
 
+        /// <summary>
+        /// Độ lệch lưu lớn hơn chừng này bị coi là chuỗi hỏng: cheat tua giờ không bao giờ cần tới mười năm, còn giá trị quá lớn
+        /// làm <see cref="DateTime"/> tràn và ném lỗi ở mọi lần đọc giờ.
+        /// </summary>
+        private static readonly TimeSpan MaximumStoredOffset = TimeSpan.FromDays(3650);
+
+        private readonly ILeagueClock _inner;
+        private readonly ILeagueTextStore _store;
+        private readonly string _storeKey;
+        private TimeSpan _offset;
+
+        /// <summary>Độ lệch chỉ nằm trong RAM: tắt app là về 0.</summary>
         public OffsetLeagueClock(ILeagueClock inner)
         {
             _inner = inner ?? throw new ArgumentNullException(nameof(inner));
         }
 
-        public TimeSpan Offset { get; set; }
-        public DateTime UtcNow => _inner.UtcNow + Offset;
+        /// <summary>Nạp độ lệch đã lưu ở <paramref name="storeKey"/>; mỗi lần đặt <see cref="Offset"/> hoặc <see cref="Advance"/> thì ghi lại.</summary>
+        public OffsetLeagueClock(ILeagueClock inner, ILeagueTextStore store, string storeKey) : this(inner)
+        {
+            _store = store ?? throw new ArgumentNullException(nameof(store));
+            if (string.IsNullOrEmpty(storeKey)) throw new ArgumentException("Khoá lưu không được rỗng.", nameof(storeKey));
+            _storeKey = storeKey;
+            _offset = LoadOffset(store, storeKey);
+        }
+
+        public TimeSpan Offset
+        {
+            get => _offset;
+            set
+            {
+                if (value == _offset) return;
+                _offset = value;
+                SaveOffset();
+            }
+        }
+
+        public DateTime UtcNow => _inner.UtcNow + _offset;
 
         public void Advance(TimeSpan duration)
         {
             Offset += duration;
+        }
+
+        private void SaveOffset()
+        {
+            if (_store == null) return;
+            if (_offset == TimeSpan.Zero)
+            {
+                _store.Delete(_storeKey);
+                return;
+            }
+            var record = new LeagueTextRecord(StoreFormat);
+            record.SetLong(OffsetTicksKey, _offset.Ticks);
+            _store.Write(_storeKey, record.Encode());
+        }
+
+        /// <summary>Chuỗi hỏng, khác định dạng hoặc giá trị vô lý → 0 (không ném lỗi lúc khởi động game).</summary>
+        private static TimeSpan LoadOffset(ILeagueTextStore store, string storeKey)
+        {
+            if (!store.TryRead(storeKey, out string text)) return TimeSpan.Zero;
+            if (!LeagueTextRecord.TryDecode(text, out LeagueTextRecord record) || record.Format != StoreFormat) return TimeSpan.Zero;
+            if (!record.Has(OffsetTicksKey)) return TimeSpan.Zero;
+
+            long ticks = record.GetLong(OffsetTicksKey, 0);
+            if (ticks > MaximumStoredOffset.Ticks || ticks < -MaximumStoredOffset.Ticks) return TimeSpan.Zero;
+            return TimeSpan.FromTicks(ticks);
         }
     }
 

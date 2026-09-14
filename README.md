@@ -4,7 +4,7 @@
 > xếp hạng, âm thanh/haptic và nơi lưu trạng thái đều cắm qua port; cùng một widget đặt được vào popup, màn riêng hay một
 > khối trong màn Win.
 
-[![Version](https://img.shields.io/badge/version-0.1.0-blue.svg)](https://github.com/TeamAcMong/unity-leaderboard/tags)
+[![Version](https://img.shields.io/badge/version-0.2.1-blue.svg)](https://github.com/TeamAcMong/unity-leaderboard/tags)
 [![Unity](https://img.shields.io/badge/unity-2022.3%20%E2%86%92%206000-black.svg)](https://unity.com/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
@@ -13,7 +13,7 @@
 **Package Manager → `+` → Add package from git URL:**
 
 ```
-https://github.com/TeamAcMong/unity-leaderboard.git#0.1.0
+https://github.com/TeamAcMong/unity-leaderboard.git#0.2.1
 ```
 
 Hoặc trong `Packages/manifest.json`:
@@ -21,7 +21,7 @@ Hoặc trong `Packages/manifest.json`:
 ```json
 {
   "dependencies": {
-    "com.dreamtech.leaderboard": "https://github.com/TeamAcMong/unity-leaderboard.git#0.1.0"
+    "com.dreamtech.leaderboard": "https://github.com/TeamAcMong/unity-leaderboard.git#0.2.1"
   }
 }
 ```
@@ -49,14 +49,14 @@ Packages/com.dreamtech.leaderboard/   ← package (thứ được phát hành)
   Runtime/League      DreamTech.Leaderboard.League     C# thuần: tier theo mùa, vùng lên/xuống, streak, rương, mô phỏng bot
   Runtime/League/Unity DreamTech.Leaderboard.League.Unity  adapter cần UnityEngine (PlayerPrefs)
   Editor              DreamTech.Leaderboard.Editor     sinh art/âm tạm, prefab mặc định, validator
-  Tests/Editor        158 test EditMode (99 leaderboard + 59 League)
+  Tests/Editor        244 test EditMode (110 leaderboard + 134 League)
 Assets/Demo/                          ← scene demo + test PlayMode (không đi theo package)
   LeaderboardDemo.unity               1 board, 3 host: màn riêng / popup / khối trong màn Win
   Scripts/LeaderboardDemo.cs          composition root + nút: +3, +12, +300, Top 3, #1, New, Best, Same, Fail next, Slow x0.1
   LeagueDemo.unity                    bàn thử League (IMGUI, chưa có art)
   Scripts/LeagueDemo.cs               composition root + nút: thắng/thoát/thua/hồi sinh, tua giờ, khép mùa, nhận rương
   Editor/*SceneBuilder                Tools/DreamTech/Leaderboard/Demo/Build (League) Demo Scene
-  Tests/                              10 test PlayMode chạy scene thật
+  Tests/                              13 test PlayMode: scene thật + nút tua giờ / xoá dữ liệu của bảng thử League
 deploy.sh, DEPLOY_UPM_SUBTREE.md      ← phát hành bằng git subtree split + tag
 ```
 

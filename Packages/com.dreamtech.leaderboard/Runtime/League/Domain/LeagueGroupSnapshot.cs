@@ -48,6 +48,7 @@ namespace DreamTech.Leaderboard.League
     /// </summary>
     public readonly struct LeagueTrophyGrant
     {
+        /// <summary>Grant chỉ biết id mùa (<see cref="Season"/> = null).</summary>
         public LeagueTrophyGrant(string grantId, string seasonId, int trophies)
         {
             if (string.IsNullOrEmpty(grantId)) throw new ArgumentException("Grant id không được rỗng.", nameof(grantId));
@@ -56,12 +57,27 @@ namespace DreamTech.Leaderboard.League
             GrantId = grantId;
             SeasonId = seasonId;
             Trophies = trophies;
+            Season = null;
+        }
+
+        /// <summary>
+        /// Grant mang cả cửa sổ mùa lúc thắng. Dịch vụ nhóm cần cửa sổ này để nhận grant của một mùa mà nó chưa từng giữ vì bị
+        /// "nhảy qua" (gửi thất bại suốt phần còn lại của mùa đó): biết mùa nằm ở đâu trên dòng thời gian thì mới dựng được sổ và
+        /// tính được kết quả.
+        /// </summary>
+        public LeagueTrophyGrant(string grantId, SeasonWindow season, int trophies)
+            : this(grantId, season != null ? season.SeasonId : throw new ArgumentNullException(nameof(season)), trophies)
+        {
+            Season = season;
         }
 
         public string GrantId { get; }
 
         /// <summary>Mùa lúc thắng. Gửi trễ sang mùa sau vẫn tính cho mùa này (nếu dịch vụ còn nhận).</summary>
         public string SeasonId { get; }
+
+        /// <summary>Cửa sổ của mùa lúc thắng; null khi grant được tạo chỉ với id mùa.</summary>
+        public SeasonWindow Season { get; }
 
         public int Trophies { get; }
     }

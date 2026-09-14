@@ -212,6 +212,73 @@ namespace DreamTech.Leaderboard.Tests
         }
 
         [Test]
+        public void MarkRevealed_SeasonChangedDuringReveal_SnapshotKeepsSeasonOfLoadedScene()
+        {
+            _scoreSource.SetScore(875);
+            BoardScene revealing = _board.LoadSceneAsync(BoardPresentMode.RevealIfPending, CancellationToken.None).Result;
+            Assert.AreEqual("season-1", revealing.Change.SeasonKey);
+
+            // Mùa đổi trong lúc màn diễn chạy; nhịp hạ cánh tới sau đó.
+            _service.SeasonKey = "season-2";
+            _board.MarkRevealed(revealing.Change);
+
+            Assert.IsTrue(_snapshotStore.TryLoad("main", out RevealSnapshot saved));
+            Assert.AreEqual("season-1", saved.SeasonKey);
+            BoardScene next = _board.LoadSceneAsync(BoardPresentMode.RevealIfPending, CancellationToken.None).Result;
+            Assert.AreEqual(RankChangeKind.NewEntry, next.Change.Kind, "Snapshot mùa cũ không được làm lần mở mùa mới thành Unchanged / RankUp giả");
+        }
+
+        [Test]
+        public void LoadScene_SeasonChangesOnceDuringSync_SyncsAgain_KeyBelongsToLastSync()
+        {
+            _scoreSource.SetScore(875);
+            _service.WhileGetLocalEntryInFlight = () =>
+            {
+                _service.WhileGetLocalEntryInFlight = null;
+                _service.SeasonKey = "season-2";
+            };
+
+            BoardScene scene = _board.LoadSceneAsync(BoardPresentMode.RevealIfPending, CancellationToken.None).Result;
+
+            Assert.AreEqual(2, _service.LocalEntryCallCount, "Khoá đổi trong lúc sync thì sync lại một lần");
+            Assert.AreEqual("season-2", scene.Change.SeasonKey);
+            Assert.AreEqual(RankChangeKind.NewEntry, scene.Change.Kind);
+        }
+
+        [Test]
+        public void LoadScene_SeasonKeepsChangingDuringSync_StopsAtMaximumAttempts_WithKeyReadBeforeLastSync()
+        {
+            _scoreSource.SetScore(875);
+            int changes = 0;
+            _service.WhileGetLocalEntryInFlight = () =>
+            {
+                changes++;
+                _service.SeasonKey = "season-" + (changes + 1);
+            };
+
+            BoardScene scene = _board.LoadSceneAsync(BoardPresentMode.RevealIfPending, CancellationToken.None).Result;
+
+            Assert.AreEqual(LeaderboardBoard.MaximumSyncAttemptsWhileSeasonChanges, _service.LocalEntryCallCount);
+            Assert.AreEqual("season-" + LeaderboardBoard.MaximumSyncAttemptsWhileSeasonChanges, scene.Change.SeasonKey,
+                            "Khoá phải là khoá đọc ngay trước lượt sync sinh ra entry, không phải khoá đã đổi sau đó");
+            Assert.AreNotEqual(_service.SeasonKey, scene.Change.SeasonKey);
+        }
+
+        [Test]
+        public void MarkRevealed_ChangeCreatedWithoutSeason_UsesCurrentSeason()
+        {
+            _scoreSource.SetScore(875);
+            LeaderboardEntry local = _board.SyncScoreAsync(CancellationToken.None).Result;
+
+            _board.MarkRevealed(RankChange.Create(RankChangeKind.Unchanged, local.Rank, local.Rank, local.Score, local.Score));
+
+            Assert.IsTrue(_snapshotStore.TryLoad("main", out RevealSnapshot saved));
+            Assert.AreEqual(_service.SeasonKey, saved.SeasonKey);
+            Assert.IsNull(RankChange.Browse(local).SeasonKey);
+            Assert.AreEqual("season-9", RankChange.Browse(local, "season-9").SeasonKey);
+        }
+
+        [Test]
         public void LoadScene_NoLocalEntry_ShowsTopOnly()
         {
             BoardScene scene = _board.LoadSceneAsync(BoardPresentMode.RevealIfPending, CancellationToken.None).Result;

@@ -94,9 +94,38 @@ Tier theo mùa, vùng lên/xuống, streak thắng, rương theo hạng. Ngườ
   - Luật nhóm (`ILeagueZoneRule`, `ISeasonOutcomeRule`, `ILeagueRewardTable`) nằm trong `LeagueRules`, dùng chung cho hệ thống
     và dịch vụ mô phỏng để dải zone trên màn hình và kết quả thật không lệch nhau.
   - Port chỉ thêm, không đổi chữ ký.
-- **Mọi bản cài `ILeagueGroupService` phải có lớp con của `LeagueGroupServiceContract`** (5 test hành vi). Interface không đủ.
+- **Mọi bản cài `ILeagueGroupService` phải có lớp con của `LeagueGroupServiceContract`** (bộ test hành vi là chính lớp đó, ở
+  `Tests/Editor/League/LeagueGroupServiceContractTests.cs`; hợp đồng đầy đủ ở XML doc của `ILeagueGroupService`). Interface không
+  đủ.
 - **Thắng level ghi ngay, không chờ mạng:** grant cúp có id duy nhất xếp hàng, `FlushPendingTrophiesAsync` gửi lại được. Grant
-  của mùa vừa hết vẫn tính cho mùa đó.
+  của mùa vừa hết vẫn tính cho mùa đó; grant đầu mùa mới khép mùa cũ TRƯỚC rồi mới cộng; grant tới muộn cho mùa đã khép tính
+  lại kết quả nếu chưa chốt, đã chốt thì dịch vụ ném `LeagueTrophyGrantRejectedException` và `LeagueSystem` bỏ khỏi hàng chờ +
+  bắn `TrophyGrantRejected`. Không có đường nào cúp biến mất im lặng (bài học playtest 0.2.1). Grant mang cửa sổ mùa
+  (`LeagueTrophyGrant.Season`) để dịch vụ dựng được sổ cho mùa bị "nhảy qua" (mọi lần gửi trong mùa đó thất bại) — id mùa là
+  chuỗi, không suy thứ tự thời gian từ id. Nhận / mất không được tuỳ thứ tự lượt gọi: mọi mùa phía sau còn trống thì chèn sổ
+  đúng chỗ và tính lại chuỗi bậc qua các mùa trống; mùa phía sau đã có cúp / kết quả đã chốt thì từ chối `UnknownSeason`.
+  Thu gọn sổ (`MaximumStoredResults`) KHÔNG bao giờ bỏ sổ còn kết quả chờ — số sổ được tạm vượt giới hạn, xem / nhận xong tự thu
+  gọn. `GetPendingSeasonResultAsync` không trả kết quả của mùa còn cúp chờ gửi, kiểm cả SAU lượt gọi dịch vụ (lượt gọi vắt qua mốc
+  đổi mùa).
+- **Lượt dùng chung = `SharedOperationRun`.** Lượt gửi của `FlushPendingTrophiesAsync` và lượt tải bảng của `LeagueBoardService`
+  chạy bằng token RIÊNG: token của một người gọi chỉ làm người đó thôi chờ (nhận huỷ của chính token đó); lượt chỉ dừng khi mọi
+  người chờ đều đã huỷ; lượt đang huỷ / đã xong không nhận thêm người. Không trỏ tới Task gắn token của một người gọi.
+- **Mùa chỉ tiến (0.2.1).** Đồng hồ lùi → dịch vụ giữ mùa đang giữ, không mở lại mùa đã khép, mỗi mùa một sổ / một kết quả.
+  Game cắm `MonotonicLeagueClock` bọc `OffsetLeagueClock` có lưu; cheat xoá dữ liệu phải `ResetHighWater()`. Hỏi bảng / kết quả
+  luôn đẩy hàng chờ cúp trước (`LoadPageAsync`, `GetPendingSeasonResultAsync`, `LeagueBoardService`). Dịch vụ mô phỏng từ chối
+  mùa chưa bắt đầu theo đồng hồ của nó (lỗi tạm) và cho lượt gọi bắt đầu trước `DebugResetSimulation` thất bại bằng lỗi tạm
+  (`SimulatedLeagueException`, KHÔNG ném `OperationCanceledException` khi token nơi gọi chưa huỷ — widget chỉ coi là huỷ khi token
+  của lượt trình bày đã huỷ) — dịch vụ và `LeagueSystem` phải dùng cùng một đồng hồ. `LeagueBoardService` chỉ dùng lại lượt tải
+  đang bay của CÙNG mùa; lượt mở trước xong muộn không ghi đè snapshot của lượt mở sau; `SubmitScoreAsync` gửi cúp xong không nhập
+  lượt tải mở trước lúc đó. Độ tươi snapshot đo bằng thời gian thực (`Stopwatch`) VÀ giờ League — chỉ giờ League thì
+  `MonotonicLeagueClock` đứng yên (giờ máy chậm hơn mốc) làm cache tươi mãi. Dữ liệu mô phỏng chỉ đọc định dạng 2;
+  định dạng 1 của 0.2.0 = bắt đầu lại (không viết lại đường đọc/gộp dữ liệu cũ).
+- **Main thread, KHÔNG `ConfigureAwait(false)` ở bất cứ đâu trong League.** Sau await, League ghi `ILeagueTextStore` (PlayerPrefs
+  chỉ gọi được trên main thread), bắn `StateChanged` cho UI, đọc `ILeagueClock` của host. Một `ConfigureAwait(false)` trong chuỗi
+  gọi là đủ hỏng: `UnitySynchronizationContext` không phải context mặc định nên .NET không chạy ngay phần tiếp theo đã bỏ context
+  mà đẩy nó sang thread pool, kể cả khi Task hoàn tất trên main thread — lượt gọi bắt đầu từ đó (gửi cúp, hỏi bảng, `Save` của dịch
+  vụ mô phỏng) mất main thread luôn (lỗi có từ 0.2.0, sửa trong 0.2.1: mở trang khi còn cúp chờ gửi thất bại vì PlayerPrefs). Test
+  chốt: `BackendCompletingOnThreadPool_*` chạy trên `SingleThreadSynchronizationContext` với backend hoàn tất Task trên thread pool.
 - **Quà ghi vào hàng chờ trước khi đưa cho game.** Granter trả false thì giữ lại, phát ở `GrantPendingRewards`.
 - **Streak:** UI cảnh báo hỏi `WouldLoseStreak(event)`, không tự đoán luật. Tên là `WinStreak` (game host có thể đã có "streak"
   khác).
@@ -143,7 +172,9 @@ lại validator.
   kiểm; test xanh trên Unity 6.6 và Unity 2022.3 (TMP 3.0.7 và 3.2.0-pre.12).
 - **Tiếp theo (cần người dùng quyết):** tự submit khi thắng, khối trong màn Win / Home, adapter backend thật, SFX thật,
   rank tụt "▼N", CI chạy test tự động.
-- **League (nhánh `feature/league`, chưa commit):**
-  - Core + mô phỏng + 59 test. Unity 6000.6: 158/158; Unity 2022.3 + TMP 3.0.7: 158/158.
-  - Còn lại: ViewModel, UI, adapter PlayerPrefs, README/CHANGELOG/DESIGN_NOTES.
+- **League:**
+  - **0.2.0 (tag, đã vào `main`):** module League + hiển thị bằng widget leaderboard (`LeagueBoardService`).
+  - **0.2.1 (nhánh `feature/league`, chưa commit):** sửa lỗi playtest quanh đổi mùa, huỷ lạc của lượt dùng chung, League
+    chạy ngoài main thread (xem CHANGELOG). Test: Unity 6000.6.0f1 244/244 EditMode (110 leaderboard + 134 League) + 13/13
+    PlayMode; Unity 2022.3.62f2 + TMP 3.0.7 244/244 EditMode.
   - Kế hoạch và design phân tích từ Figma nằm ở project Icon Match: `Assets/IconMatch/Docs/LEAGUE_PLAN.html`.
