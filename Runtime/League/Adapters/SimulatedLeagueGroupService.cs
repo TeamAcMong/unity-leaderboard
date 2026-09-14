@@ -41,7 +41,12 @@ namespace DreamTech.Leaderboard.League
         /// <summary>Độ trễ mạng giả lập (ms). 0 = hoàn tất đồng bộ (test).</summary>
         public int LatencyMilliseconds = 0;
 
-        /// <summary>Số kết quả mùa giữ lại tối đa (kết quả còn việc cho UI được ưu tiên giữ).</summary>
+        /// <summary>
+        /// Số mùa đã khép giữ lại (kết quả mùa + sổ cúp của mùa đó, để nhận grant tới muộn và chống cộng trùng khi gửi lại). Chỉ sổ
+        /// đã hết việc cho UI (kết quả đã xem + đã nhận, hoặc không có kết quả) bị bỏ để giữ giới hạn, cũ trước; mùa vừa khép gần
+        /// nhất luôn được giữ. Sổ còn kết quả chờ không bao giờ bị bỏ, nên số sổ có thể tạm vượt giới hạn (vd gửi bù cúp của nhiều
+        /// mùa bị nhảy qua cùng lúc) — xem / nhận xong các kết quả đó thì tự thu gọn lại.
+        /// </summary>
         public int MaximumStoredResults = 4;
 
         public string StoreKey = "league.simulation";
@@ -63,7 +68,11 @@ namespace DreamTech.Leaderboard.League
         }
     }
 
-    /// <summary>Lỗi giả lập do <see cref="SimulatedLeagueGroupService.FailNextCall"/>.</summary>
+    /// <summary>
+    /// Lỗi tạm thời của dịch vụ mô phỏng (gọi lại được): lỗi mạng giả lập do <see cref="SimulatedLeagueGroupService.FailNextCall"/>,
+    /// lượt gọi mang mùa chưa bắt đầu theo đồng hồ của dịch vụ (lượt gọi cũ đọc giờ đã tua rồi đồng hồ bị đặt lại), hoặc lượt gọi
+    /// bắt đầu trước <see cref="SimulatedLeagueGroupService.DebugResetSimulation"/>.
+    /// </summary>
     public sealed class SimulatedLeagueException : Exception
     {
         public SimulatedLeagueException(string message) : base(message)
@@ -74,7 +83,20 @@ namespace DreamTech.Leaderboard.League
     /// <summary>
     /// Dịch vụ nhóm chạy offline: nhóm gồm người chơi + bot. Cúp của bot là hàm tất định của (seed, mùa, tier, người chơi, thời
     /// điểm) — không lưu bot, mở lại app hay cài lại vẫn ra cùng bảng, và cúp bot chỉ tăng theo thời gian. Máy chỉ lưu bậc hiện
-    /// tại, cúp của người chơi, các grant đã nhận và kết quả mùa.
+    /// tại, mùa đang giữ (cúp + grant đã nhận), và sổ của vài mùa vừa khép (cửa sổ mùa, bậc, cúp, grant, kết quả).
+    ///
+    /// <para><b>Mùa chỉ tiến.</b> Mùa theo đồng hồ mới hơn mùa đang giữ → khép mùa đang giữ rồi mở mùa mới. Mùa theo đồng hồ cũ
+    /// hơn (đồng hồ lùi) → giữ nguyên mùa đang giữ, không mở lại mùa đã khép, không xoá cúp. Mỗi mùa có một sổ duy nhất nên
+    /// không bao giờ có hai kết quả cùng một mùa. Grant tới muộn cho mùa đã khép được tính lại từ sổ đó (xem hợp đồng ở
+    /// <see cref="ILeagueGroupService"/>). Grant của một mùa bị "nhảy qua" (chưa từng giữ vì mọi lần gửi trong mùa đó thất bại) được
+    /// dựng sổ riêng từ cửa sổ mùa mà grant mang theo (<see cref="LeagueTrophyGrant.Season"/>), chèn đúng thứ tự thời gian, miễn là mọi
+    /// mùa phía sau nó còn trống — kể cả khi một lượt gọi khác đã kịp mở / khép những mùa trống đó trước.</para>
+    ///
+    /// <para><b>Đồng hồ.</b> Dịch vụ và <see cref="LeagueSystem"/> phải dùng CÙNG một đồng hồ (thường là
+    /// <see cref="MonotonicLeagueClock"/>). Lượt gọi mang mùa chưa bắt đầu theo đồng hồ này bị từ chối bằng
+    /// <see cref="SimulatedLeagueException"/> (lỗi tạm): đó là lượt gọi cũ đã đọc giờ tua tới rồi giờ bị đặt lại, cho qua thì dịch vụ
+    /// kẹt ở mùa tương lai. Lượt gọi bắt đầu trước <see cref="DebugResetSimulation"/> thất bại bằng
+    /// <see cref="SimulatedLeagueException"/> (lỗi tạm, không phải <see cref="OperationCanceledException"/>) và không ghi gì.</para>
     ///
     /// <para>Muốn lên backend thật: viết một class khác cài <see cref="ILeagueGroupService"/> và đổi dòng
     /// <c>WithGroupService</c> ở composition root. Contract test của port chạy cho cả hai.</para>
@@ -87,6 +109,9 @@ namespace DreamTech.Leaderboard.League
         private readonly ILeagueTextStore _store;
         private readonly SimulatedLeagueData _data;
         private bool _failNextCall;
+
+        /// <summary>Tăng mỗi lần <see cref="DebugResetSimulation"/>: lượt gọi bắt đầu ở thế hệ cũ không được ghi lên dữ liệu mới.</summary>
+        private int _resetGeneration;
 
         public SimulatedLeagueGroupService(SimulatedLeagueOptions options, LeagueRules rules, ILeagueClock clock, ILeagueTextStore store)
         {
@@ -108,6 +133,9 @@ namespace DreamTech.Leaderboard.League
 
         public long LocalTrophies => _data.HasActiveSeason ? _data.LocalTrophies : 0;
 
+        /// <summary>Id mùa dịch vụ đang giữ; null nếu chưa vào nhóm. Có thể khác mùa theo đồng hồ khi đồng hồ bị lùi.</summary>
+        public string ActiveSeasonId => _data.HasActiveSeason ? _data.ActiveSeasonId : null;
+
         // ---------------------------------------------------------------- ILeagueGroupService
 
         public async Task<LeagueGroupSnapshot> GetGroupAsync(SeasonWindow currentSeason, CancellationToken cancellationToken)
@@ -115,31 +143,24 @@ namespace DreamTech.Leaderboard.League
             if (currentSeason == null) throw new ArgumentNullException(nameof(currentSeason));
             await BeginCallAsync(cancellationToken);
             EnsureActiveSeason(currentSeason);
-            return BuildSnapshot(_clock.UtcNow);
+            return BuildActiveSnapshot(_clock.UtcNow);
         }
 
         public async Task<LeagueGroupSnapshot> AddTrophiesAsync(SeasonWindow currentSeason, LeagueTrophyGrant grant, CancellationToken cancellationToken)
         {
             if (currentSeason == null) throw new ArgumentNullException(nameof(currentSeason));
+            if (string.IsNullOrEmpty(grant.GrantId)) throw new ArgumentException("Grant chưa được khởi tạo.", nameof(grant));
             await BeginCallAsync(cancellationToken);
 
-            // Grant của mùa đang chạy được cộng TRƯỚC khi khép mùa: thắng lúc 23:59 gửi lúc 00:01 vẫn tính cho mùa cũ.
-            if (_data.HasActiveSeason && string.Equals(grant.SeasonId, _data.ActiveSeasonId, StringComparison.Ordinal) &&
-                !_data.AppliedGrantIds.Contains(grant.GrantId))
-            {
-                _data.LocalTrophies += grant.Trophies;
-                _data.AppliedGrantIds.Add(grant.GrantId);
-            }
-            else if (!_data.HasActiveSeason && string.Equals(grant.SeasonId, currentSeason.SeasonId, StringComparison.Ordinal))
-            {
-                StartActiveSeason(currentSeason);
-                _data.LocalTrophies += grant.Trophies;
-                _data.AppliedGrantIds.Add(grant.GrantId);
-            }
-
+            // Kiểm mùa TRƯỚC khi cộng: mùa tương lai (lượt gọi cũ) mà lọt vào TryApplyGrant thì có thể đã khép mùa / cộng cúp rồi mới
+            // bị từ chối ở EnsureActiveSeason.
+            ThrowIfSeasonNotStarted(currentSeason);
+            bool accepted = TryApplyGrant(currentSeason, grant, out LeagueTrophyGrantRejection rejection);
             EnsureActiveSeason(currentSeason);
             Save();
-            return BuildSnapshot(_clock.UtcNow);
+
+            if (!accepted) throw new LeagueTrophyGrantRejectedException(grant, rejection, DescribeRejection(grant, rejection));
+            return BuildActiveSnapshot(_clock.UtcNow);
         }
 
         public async Task<SeasonResult> GetPendingResultAsync(SeasonWindow currentSeason, CancellationToken cancellationToken)
@@ -147,9 +168,9 @@ namespace DreamTech.Leaderboard.League
             if (currentSeason == null) throw new ArgumentNullException(nameof(currentSeason));
             await BeginCallAsync(cancellationToken);
             EnsureActiveSeason(currentSeason);
-            foreach (SeasonResult result in _data.Results)
+            foreach (SimulatedClosedSeason closed in _data.ClosedSeasons)
             {
-                if (result.IsPending) return result;
+                if (closed.HasPendingResult) return closed.Result;
             }
             return null;
         }
@@ -157,21 +178,21 @@ namespace DreamTech.Leaderboard.League
         public async Task AcknowledgeResultAsync(string seasonId, CancellationToken cancellationToken)
         {
             await BeginCallAsync(cancellationToken);
-            int index = IndexOfResult(seasonId);
-            if (index < 0 || _data.Results[index].Acknowledged) return;
-            _data.Results[index] = _data.Results[index].WithAcknowledged();
-            TrimResults();
+            SimulatedClosedSeason closed = FindClosedSeasonWithResult(seasonId, requireUnacknowledged: true, requireUnclaimedReward: false);
+            if (closed == null) return;
+            closed.Result = closed.Result.WithAcknowledged();
+            TrimClosedSeasons();
             Save();
         }
 
         public async Task<LeagueRewardPackage> ClaimSeasonRewardAsync(string seasonId, CancellationToken cancellationToken)
         {
             await BeginCallAsync(cancellationToken);
-            int index = IndexOfResult(seasonId);
-            if (index < 0 || !_data.Results[index].HasUnclaimedReward) return LeagueRewardPackage.None;
-            SeasonResult result = _data.Results[index];
-            _data.Results[index] = result.WithRewardClaimed();
-            TrimResults();
+            SimulatedClosedSeason closed = FindClosedSeasonWithResult(seasonId, requireUnacknowledged: false, requireUnclaimedReward: true);
+            if (closed == null) return LeagueRewardPackage.None;
+            SeasonResult result = closed.Result;
+            closed.Result = result.WithRewardClaimed();
+            TrimClosedSeasons();
             Save();
             return result.Reward;
         }
@@ -184,7 +205,7 @@ namespace DreamTech.Leaderboard.League
             _failNextCall = true;
         }
 
-        /// <summary>Đặt cúp người chơi của mùa <paramref name="currentSeason"/> (tự vào nhóm nếu chưa).</summary>
+        /// <summary>Đặt cúp người chơi của mùa đang giữ (tự vào nhóm của <paramref name="currentSeason"/> nếu chưa).</summary>
         public void DebugSetLocalTrophies(SeasonWindow currentSeason, long trophies)
         {
             EnsureActiveSeason(currentSeason);
@@ -208,7 +229,8 @@ namespace DreamTech.Leaderboard.League
         /// </summary>
         /// <param name="projectToSeasonEnd">
         /// false = đủ để đứng hạng đó ngay lúc này (bot còn kiếm cúp tiếp nên hạng sẽ trôi xuống);
-        /// true = tính theo bảng lúc mùa kết thúc, tức là đủ để GIỮ hạng đó tới cuối mùa.
+        /// true = tính theo bảng lúc mùa kết thúc, tức là đủ để GIỮ hạng đó tới cuối mùa. Kết quả mùa luôn tính theo bảng lúc
+        /// kết thúc, nên cheat "hết mùa" ngay sau khi leo bằng false thường ra hạng thấp hơn hạng vừa thấy trên trang.
         /// </param>
         public long DebugTrophiesToReachRank(SeasonWindow currentSeason, int targetRank, bool projectToSeasonEnd = false)
         {
@@ -221,31 +243,211 @@ namespace DreamTech.Leaderboard.League
             return bots[targetRank].Trophies + 1;
         }
 
-        /// <summary>Xoá toàn bộ dữ liệu mô phỏng (bậc, cúp, kết quả).</summary>
+        /// <summary>
+        /// Xoá toàn bộ dữ liệu mô phỏng (bậc, cúp, mùa đang giữ, sổ các mùa đã khép, kết quả). Lượt gọi đang chạy dở (bắt đầu trước
+        /// lúc xoá) thất bại bằng <see cref="SimulatedLeagueException"/> (lỗi tạm, gọi lại được) khi hết độ trễ và không ghi lên dữ
+        /// liệu mới. Không dùng <see cref="OperationCanceledException"/>: token của nơi gọi không bị huỷ, host coi huỷ là "người dùng
+        /// huỷ" sẽ im lặng đứng ở trạng thái đang tải.
+        /// </summary>
         public void DebugResetSimulation()
         {
+            Interlocked.Increment(ref _resetGeneration);
             _store.Delete(_options.StoreKey);
             _data.ClearActiveSeason();
-            _data.Results.Clear();
+            _data.ClosedSeasons.Clear();
             _data.TierIndex = _rules.Ladder.ClampIndex(_options.StartingTierIndex);
+        }
+
+        // ---------------------------------------------------------------- Cộng cúp
+
+        private bool TryApplyGrant(SeasonWindow currentSeason, in LeagueTrophyGrant grant, out LeagueTrophyGrantRejection rejection)
+        {
+            rejection = default;
+
+            // 1. Mùa đã khép: sổ của mùa đó là nguồn sự thật.
+            SimulatedClosedSeason closed = _data.FindClosedSeason(grant.SeasonId);
+            if (closed != null) return TryApplyLateGrant(closed, grant, out rejection);
+
+            // 2. Mùa đang giữ — kể cả khi đã hết theo đồng hồ mà chưa khép: thắng lúc 23:59 gửi lúc 00:01 vẫn tính cho mùa đó.
+            //    Mùa được khép ngay sau (EnsureActiveSeason ở nơi gọi); grant cùng mùa tới sau đó đi đường 1.
+            if (_data.HasActiveSeason && IsSameSeason(grant.SeasonId, _data.ActiveSeasonId))
+            {
+                ApplyToActiveSeason(grant);
+                return true;
+            }
+
+            // 3. Grant của mùa hiện tại trong khi dịch vụ còn giữ mùa cũ đã hết: khép mùa cũ TRƯỚC rồi mới cộng vào mùa mới.
+            //    Làm ngược lại (cộng trước, khép sau) thì grant không khớp mùa nào và bị bỏ — lỗi "mất cúp đầu mùa" của 0.2.0.
+            if (IsSameSeason(grant.SeasonId, currentSeason.SeasonId))
+            {
+                EnsureActiveSeason(currentSeason);
+                if (_data.HasActiveSeason && IsSameSeason(grant.SeasonId, _data.ActiveSeasonId))
+                {
+                    ApplyToActiveSeason(grant);
+                    return true;
+                }
+            }
+
+            // 4. Mùa bị "nhảy qua": dịch vụ chưa từng giữ vì mọi lần gửi trong mùa đó đều thất bại.
+            if (TryApplySkippedSeasonGrant(currentSeason, grant)) return true;
+
+            rejection = LeagueTrophyGrantRejection.UnknownSeason;
+            return false;
+        }
+
+        /// <summary>
+        /// Grant của một mùa dịch vụ chưa từng giữ, nằm trước mùa hiện tại — vd thắng ở N+1, gửi thất bại, lần gửi được đầu tiên rơi
+        /// vào mùa sau nữa. Nhận khi MỌI mùa dịch vụ biết mà bắt đầu sau khi mùa của grant kết thúc (mùa đang giữ và các sổ đã khép)
+        /// đều còn TRỐNG (<see cref="IsEmptyClosedSeason"/>, <see cref="IsActiveSeasonEmpty"/>): khi đó các mùa đó chưa ghi nhận gì
+        /// phụ thuộc vào bậc, nên chèn sổ của mùa bị nhảy qua vào giữa rồi tính lại chúng cho ra đúng dữ liệu như thể grant đã tới
+        /// đúng lúc. Kết quả không phụ thuộc thứ tự lượt gọi: một lượt GetGroup / gửi hỏng ở mùa sau chạy trước grant (dịch vụ đã
+        /// giữ, hoặc đã khép, những mùa trống phía sau) cũng ra cùng dữ liệu. Các trạng thái được phủ:
+        /// <list type="bullet">
+        /// <item>(a) còn giữ N (mùa trước grant): khép N trước, N thành sổ liền trước;</item>
+        /// <item>(b) đã khép N và đang giữ một mùa trống phía sau: chèn sổ chen giữa;</item>
+        /// <item>(c) giữa sổ của grant và mùa đang giữ còn sổ trống đã khép (mùa trống đã mở rồi khép trong lúc gửi vẫn hỏng);</item>
+        /// <item>chưa khép mùa nào và mùa đầu tiên dịch vụ giữ là mùa trống phía sau grant.</item>
+        /// </list>
+        /// Bậc của sổ mới = bậc mùa sau của sổ khép liền trước; không có sổ liền trước thì lấy bậc mà mùa trống đầu tiên phía sau đã
+        /// bắt đầu. Sau đó bậc được truyền qua các mùa trống phía sau (<see cref="PropagateTierToEmptySeasonsAfter"/>).
+        /// <para>Mùa phía sau đã có cúp / grant / kết quả đã chốt → KHÔNG nhận (grant bị từ chối <see cref="LeagueTrophyGrantRejection.UnknownSeason"/>):
+        /// người chơi đã chơi hoặc đã xem kết quả ở bậc tính khi chưa có grant này, chèn sổ vào là đổi lịch sử đã chốt. Chồng lấn cửa
+        /// sổ mùa (lịch mùa đổi) cũng không nhận. Cần cửa sổ mùa của grant (<see cref="LeagueTrophyGrant.Season"/>): id mùa là chuỗi,
+        /// không so thứ tự thời gian được.</para>
+        /// </summary>
+        private bool TryApplySkippedSeasonGrant(SeasonWindow currentSeason, in LeagueTrophyGrant grant)
+        {
+            SeasonWindow grantSeason = grant.Season;
+            if (grantSeason == null || grantSeason.EndUtc > currentSeason.StartUtc) return false;
+
+            // 1. Kiểm hết TRƯỚC khi đổi dữ liệu: mùa phía sau phải trống, không chồng lấn.
+            bool hasClosedSeasonAfterGrant = false;
+            foreach (SimulatedClosedSeason closed in _data.ClosedSeasons)
+            {
+                if (closed.EndUtc <= grantSeason.StartUtc) continue;
+                if (closed.StartUtc < grantSeason.EndUtc || !IsEmptyClosedSeason(closed)) return false;
+                hasClosedSeasonAfterGrant = true;
+            }
+
+            bool heldEndedBeforeGrant = false;
+            if (_data.HasActiveSeason)
+            {
+                heldEndedBeforeGrant = _data.ActiveSeasonEnd <= grantSeason.StartUtc;
+                bool heldStartsAfterGrant = _data.ActiveSeasonStart >= grantSeason.EndUtc;
+                if (!heldEndedBeforeGrant && (!heldStartsAfterGrant || !IsActiveSeasonEmpty())) return false;
+
+                // Sổ đã khép nằm SAU mùa đang giữ chỉ có ở dữ liệu hỏng (mùa chỉ tiến) — không đoán thứ tự, không nhận.
+                if (heldEndedBeforeGrant && hasClosedSeasonAfterGrant) return false;
+            }
+
+            // 2. Trạng thái (a): mùa đang giữ đã hết trước mùa của grant → khép nó trước, nó thành sổ liền trước.
+            if (heldEndedBeforeGrant) FinalizeActiveSeason();
+
+            // 3. Dựng sổ của mùa bị nhảy qua, chèn đúng thứ tự thời gian, rồi truyền bậc qua các mùa trống phía sau.
+            int tierIndex = _rules.Ladder.ClampIndex(TierIndexForSeasonStartingAt(grantSeason));
+            var skipped = new SimulatedClosedSeason(grantSeason.SeasonId, grantSeason.StartUtc, grantSeason.EndUtc, tierIndex)
+            {
+                LocalTrophies = grant.Trophies,
+            };
+            skipped.AppliedGrantIds.Add(grant.GrantId);
+            DecideClosedSeason(skipped);
+            _data.TryAddClosedSeason(skipped);
+            PropagateTierToEmptySeasonsAfter(skipped);
+            TrimClosedSeasons();
+            return true;
+        }
+
+        /// <summary>
+        /// Bậc mà một mùa chen vào dòng thời gian phải có: bậc mùa sau của sổ khép liền trước; không có sổ liền trước thì bậc mà mùa
+        /// đầu tiên phía sau đã bắt đầu (sổ đã khép đầu tiên, rồi tới mùa đang giữ); không biết mùa nào thì bậc của mùa sắp bắt đầu.
+        /// </summary>
+        private int TierIndexForSeasonStartingAt(SeasonWindow season)
+        {
+            SimulatedClosedSeason previous = null;
+            SimulatedClosedSeason firstAfter = null;
+            foreach (SimulatedClosedSeason closed in _data.ClosedSeasons)
+            {
+                if (closed.EndUtc <= season.StartUtc) previous = closed;
+                else if (firstAfter == null && closed.StartUtc >= season.EndUtc) firstAfter = closed;
+            }
+
+            if (previous != null) return previous.NextTierIndex;
+            if (firstAfter != null) return firstAfter.TierIndex;
+            return _data.HasActiveSeason && _data.ActiveSeasonStart >= season.EndUtc ? _data.ActiveTierIndex : _data.TierIndex;
+        }
+
+        /// <summary>Sổ đã khép chưa ghi nhận gì phụ thuộc vào bậc: không cúp, không grant, kết quả (nếu có) chưa chốt với người chơi.</summary>
+        private static bool IsEmptyClosedSeason(SimulatedClosedSeason closed)
+        {
+            return closed.LocalTrophies == 0 && closed.AppliedGrantIds.Count == 0 && !closed.IsFinalized;
+        }
+
+        /// <summary>Mùa đang giữ chưa có cúp, chưa nhận grant nào: đổi bậc của nó không làm sai thứ gì người chơi đã kiếm.</summary>
+        private bool IsActiveSeasonEmpty()
+        {
+            return _data.LocalTrophies == 0 && _data.AppliedGrantIds.Count == 0;
+        }
+
+        private void ApplyToActiveSeason(in LeagueTrophyGrant grant)
+        {
+            if (!_data.AppliedGrantIds.Add(grant.GrantId)) return;
+            _data.LocalTrophies += grant.Trophies;
+        }
+
+        /// <summary>Grant tới sau khi mùa của nó đã khép. Chưa chốt với người chơi → cộng + tính lại kết quả; đã chốt → từ chối.</summary>
+        private bool TryApplyLateGrant(SimulatedClosedSeason closed, in LeagueTrophyGrant grant, out LeagueTrophyGrantRejection rejection)
+        {
+            rejection = default;
+            if (closed.AppliedGrantIds.Contains(grant.GrantId)) return true;
+
+            if (closed.IsFinalized)
+            {
+                rejection = LeagueTrophyGrantRejection.SeasonAlreadyFinalized;
+                return false;
+            }
+
+            int previousNextTierIndex = closed.NextTierIndex;
+            closed.AppliedGrantIds.Add(grant.GrantId);
+            closed.LocalTrophies += grant.Trophies;
+            DecideClosedSeason(closed);
+            if (closed.NextTierIndex != previousNextTierIndex) PropagateTierToEmptySeasonsAfter(closed);
+            return true;
         }
 
         // ---------------------------------------------------------------- Mùa
 
         private void EnsureActiveSeason(SeasonWindow currentSeason)
         {
+            ThrowIfSeasonNotStarted(currentSeason);
             if (!_data.HasActiveSeason)
             {
                 StartActiveSeason(currentSeason);
                 Save();
                 return;
             }
-            if (string.Equals(_data.ActiveSeasonId, currentSeason.SeasonId, StringComparison.Ordinal)) return;
+            if (IsSameSeason(_data.ActiveSeasonId, currentSeason.SeasonId)) return;
 
-            // Mùa mới bắt đầu sau khi mùa đang giữ đã hết → khép mùa cũ. Ngược lại là giờ bị lùi / lịch đổi → bỏ mùa đang giữ.
-            if (currentSeason.StartUtc >= _data.ActiveSeasonEnd) FinalizeActiveSeason();
+            // Mùa chỉ tiến. Mùa theo đồng hồ chưa bắt đầu sau khi mùa đang giữ hết (đồng hồ lùi, hoặc lịch mùa đổi làm hai mùa
+            // chồng nhau) → GIỮ NGUYÊN mùa đang giữ cùng số cúp. Bản 0.2.0 bỏ mùa đang giữ rồi mở lại mùa cũ: mùa đã khép bị mở
+            // lại với 0 cúp, khép lần hai sinh kết quả trùng và luồng popup lặp mãi.
+            if (currentSeason.StartUtc < _data.ActiveSeasonEnd) return;
+
+            FinalizeActiveSeason();
             StartActiveSeason(currentSeason);
             Save();
+        }
+
+        /// <summary>
+        /// Từ chối mùa chưa bắt đầu theo đồng hồ của CHÍNH dịch vụ. Với đồng hồ dùng chung (cách lắp chuẩn) điều này không xảy ra
+        /// khi chơi thường; chỉ gặp khi một lượt gọi đọc mùa lúc giờ đã tua tới, rồi giờ bị đặt lại trước khi lượt đó chạy tới đây.
+        /// Cho qua thì dịch vụ mở (hoặc khép sớm mùa đang giữ để mở) mùa tương lai và kẹt ở đó — mùa chỉ tiến. Ném lỗi tạm thay vì
+        /// từ chối grant: <see cref="LeagueSystem"/> giữ grant trong hàng chờ, lần gọi sau đọc lại mùa theo giờ mới.
+        /// </summary>
+        private void ThrowIfSeasonNotStarted(SeasonWindow currentSeason)
+        {
+            if (currentSeason.StartUtc <= _clock.UtcNow) return;
+            throw new SimulatedLeagueException("Mùa " + currentSeason.SeasonId +
+                                               " chưa bắt đầu theo đồng hồ của dịch vụ (lượt gọi cũ mang giờ đã tua) — gọi lại để đọc mùa mới.");
         }
 
         private void StartActiveSeason(SeasonWindow season)
@@ -260,45 +462,109 @@ namespace DreamTech.Leaderboard.League
 
         private void FinalizeActiveSeason()
         {
-            SeasonWindow window = ActiveWindow();
-            LeagueGroupSnapshot finalStandings = BuildSnapshot(window.EndUtc);
-            bool participated = _data.LocalTrophies > 0;
-            var input = new SeasonOutcomeInput(_data.ActiveTierIndex, finalStandings.LocalRank, finalStandings.GroupSize,
-                                               _data.LocalTrophies, participated);
+            // Mùa đang giữ trùng id một sổ đã khép chỉ có ở dữ liệu hỏng (mùa chỉ tiến nên không bao giờ mở lại mùa đã khép). Mọi
+            // grant của id đó đã vào sổ (đường 1 của TryApplyGrant), mùa đang giữ không có cúp nào → bỏ, không sinh kết quả thứ hai.
+            if (_data.FindClosedSeason(_data.ActiveSeasonId) != null)
+            {
+                _data.ClearActiveSeason();
+                return;
+            }
+
+            var closed = new SimulatedClosedSeason(_data.ActiveSeasonId, _data.ActiveSeasonStart, _data.ActiveSeasonEnd, _data.ActiveTierIndex)
+            {
+                LocalTrophies = _data.LocalTrophies,
+            };
+            closed.AppliedGrantIds.UnionWith(_data.AppliedGrantIds);
+            DecideClosedSeason(closed);
+
+            _data.TierIndex = closed.NextTierIndex;
+            _data.TryAddClosedSeason(closed);
+            _data.ClearActiveSeason();
+            TrimClosedSeasons();
+        }
+
+        /// <summary>
+        /// Tính kết quả của một mùa đã khép từ sổ của nó: bảng bot tất định lúc mùa kết thúc + cúp của người chơi. Chỉ gọi khi kết
+        /// quả chưa chốt với người chơi (cờ xem / nhận của kết quả mới luôn là false).
+        /// </summary>
+        private void DecideClosedSeason(SimulatedClosedSeason closed)
+        {
+            SeasonWindow window = closed.Window;
+            LeagueGroupSnapshot finalStandings = BuildSnapshot(window, closed.TierIndex, closed.LocalTrophies, window.EndUtc);
+            bool participated = closed.LocalTrophies > 0;
+            var input = new SeasonOutcomeInput(closed.TierIndex, finalStandings.LocalRank, finalStandings.GroupSize, closed.LocalTrophies,
+                                               participated);
             SeasonOutcomeDecision decision = _rules.Decide(input);
             LeagueRewardPackage reward = participated
-                ? _rules.RewardFor(_data.ActiveTierIndex, finalStandings.LocalRank, finalStandings.GroupSize)
+                ? _rules.RewardFor(closed.TierIndex, finalStandings.LocalRank, finalStandings.GroupSize)
                 : LeagueRewardPackage.None;
 
-            _data.TierIndex = decision.NextTierIndex;
-            if (participated || decision.Outcome != SeasonOutcome.Unchanged)
-            {
-                _data.Results.Add(new SeasonResult(window.SeasonId, _data.ActiveTierIndex, decision.NextTierIndex, decision.Outcome,
-                                                   finalStandings.LocalRank, finalStandings.GroupSize, _data.LocalTrophies, reward,
-                                                   acknowledged: false, rewardClaimed: false));
-                TrimResults();
-            }
-            _data.ClearActiveSeason();
+            closed.NextTierIndex = decision.NextTierIndex;
+            closed.Result = participated || decision.Outcome != SeasonOutcome.Unchanged
+                ? new SeasonResult(closed.SeasonId, closed.TierIndex, decision.NextTierIndex, decision.Outcome, finalStandings.LocalRank,
+                                   finalStandings.GroupSize, closed.LocalTrophies, reward, acknowledged: false, rewardClaimed: false)
+                : null;
         }
 
-        private void TrimResults()
+        /// <summary>
+        /// Bậc mùa sau của <paramref name="changed"/> vừa được tính (lại): truyền theo thứ tự thời gian qua các mùa phía sau CÒN TRỐNG
+        /// — sổ trống đã khép được đặt lại bậc và tính lại kết quả (bảng bot và outcome đổi theo bậc, nên kết quả có thể xuất hiện
+        /// hoặc biến mất đúng luật), mùa đang giữ trống đổi bậc. Gặp mùa đã có cúp / grant / kết quả đã chốt thì dừng: người chơi đã
+        /// kiếm cúp hoặc đã xem kết quả ở bậc cũ, không đổi bậc giữa chừng.
+        /// </summary>
+        private void PropagateTierToEmptySeasonsAfter(SimulatedClosedSeason changed)
         {
-            int maximum = Math.Max(1, _options.MaximumStoredResults);
-            for (int index = 0; index < _data.Results.Count && _data.Results.Count > maximum;)
+            int changedIndex = _data.ClosedSeasons.IndexOf(changed);
+            if (changedIndex < 0) return;
+
+            int tierIndex = changed.NextTierIndex;
+            for (int index = changedIndex + 1; index < _data.ClosedSeasons.Count; index++)
             {
-                if (!_data.Results[index].IsPending) _data.Results.RemoveAt(index);
+                SimulatedClosedSeason later = _data.ClosedSeasons[index];
+                if (!IsEmptyClosedSeason(later)) return;
+                later.TierIndex = _rules.Ladder.ClampIndex(tierIndex);
+                DecideClosedSeason(later);
+                tierIndex = later.NextTierIndex;
+            }
+
+            if (_data.HasActiveSeason)
+            {
+                if (_data.ActiveSeasonStart < changed.EndUtc || !IsActiveSeasonEmpty()) return;
+                _data.ActiveTierIndex = _rules.Ladder.ClampIndex(tierIndex);
+            }
+            _data.TierIndex = tierIndex;
+        }
+
+        /// <summary>
+        /// Thu gọn sổ về <see cref="SimulatedLeagueOptions.MaximumStoredResults"/> mùa bằng cách bỏ (cũ trước) những sổ đã hết việc cho
+        /// UI. Sổ còn kết quả chờ (<see cref="SimulatedClosedSeason.HasPendingResult"/>) KHÔNG BAO GIỜ bị bỏ, kể cả khi số sổ vượt giới
+        /// hạn: bỏ nó là mất kết quả + rương người chơi chưa thấy. Bản trước bỏ luôn sổ cũ nhất khi mọi sổ đều còn chờ — gửi bù cúp của
+        /// nhiều mùa bị nhảy qua cùng lúc (mỗi mùa dựng một sổ có kết quả) đẩy sổ của mùa trước đó, đã có cúp và kết quả chưa xem, ra khỏi
+        /// danh sách. Số sổ vượt giới hạn tự thu gọn ở lượt sau: hàm này chạy lại sau mỗi lần xem / nhận.
+        /// </summary>
+        private void TrimClosedSeasons()
+        {
+            List<SimulatedClosedSeason> closedSeasons = _data.ClosedSeasons;
+            int maximum = Math.Max(1, _options.MaximumStoredResults);
+
+            // Mùa vừa khép gần nhất (phần tử cuối) không bị bỏ ở lượt này: grant tới muộn của nó vẫn cần sổ.
+            for (int index = 0; index < closedSeasons.Count - 1 && closedSeasons.Count > maximum;)
+            {
+                if (!closedSeasons[index].HasPendingResult) closedSeasons.RemoveAt(index);
                 else index++;
             }
-            while (_data.Results.Count > maximum) _data.Results.RemoveAt(0);
         }
 
-        private int IndexOfResult(string seasonId)
+        private SimulatedClosedSeason FindClosedSeasonWithResult(string seasonId, bool requireUnacknowledged, bool requireUnclaimedReward)
         {
-            for (int index = 0; index < _data.Results.Count; index++)
+            foreach (SimulatedClosedSeason closed in _data.ClosedSeasons)
             {
-                if (string.Equals(_data.Results[index].SeasonId, seasonId, StringComparison.Ordinal)) return index;
+                if (closed.Result == null || !IsSameSeason(closed.SeasonId, seasonId)) continue;
+                if (requireUnacknowledged && closed.Result.Acknowledged) continue;
+                if (requireUnclaimedReward && !closed.Result.HasUnclaimedReward) continue;
+                return closed;
             }
-            return -1;
+            return null;
         }
 
         private SeasonWindow ActiveWindow()
@@ -306,13 +572,31 @@ namespace DreamTech.Leaderboard.League
             return new SeasonWindow(_data.ActiveSeasonId, _data.ActiveSeasonStart, _data.ActiveSeasonEnd);
         }
 
+        private static bool IsSameSeason(string first, string second)
+        {
+            return string.Equals(first, second, StringComparison.Ordinal);
+        }
+
+        private static string DescribeRejection(in LeagueTrophyGrant grant, LeagueTrophyGrantRejection rejection)
+        {
+            string reason = rejection == LeagueTrophyGrantRejection.SeasonAlreadyFinalized
+                ? "kết quả mùa đã được chốt với người chơi"
+                : "dịch vụ không nhận mùa này";
+            return "Grant " + grant.GrantId + " (+" + grant.Trophies.ToString(CultureInfo.InvariantCulture) + " cúp, mùa " + grant.SeasonId +
+                   ") bị từ chối: " + reason + ".";
+        }
+
         // ---------------------------------------------------------------- Bảng xếp hạng
 
-        private LeagueGroupSnapshot BuildSnapshot(DateTime atUtc)
+        private LeagueGroupSnapshot BuildActiveSnapshot(DateTime atUtc)
         {
-            SeasonWindow window = ActiveWindow();
-            List<SimulatedPlayer> players = BuildBots(window, _data.ActiveTierIndex, atUtc);
-            players.Add(new SimulatedPlayer(_options.LocalPlayerId, _options.LocalDisplayName, _data.LocalTrophies, int.MaxValue));
+            return BuildSnapshot(ActiveWindow(), _data.ActiveTierIndex, _data.LocalTrophies, atUtc);
+        }
+
+        private LeagueGroupSnapshot BuildSnapshot(SeasonWindow window, int tierIndex, long localTrophies, DateTime atUtc)
+        {
+            List<SimulatedPlayer> players = BuildBots(window, tierIndex, atUtc);
+            players.Add(new SimulatedPlayer(_options.LocalPlayerId, _options.LocalDisplayName, localTrophies, int.MaxValue));
             players.Sort(ComparePlayers);
 
             var standings = new List<LeaderboardEntry>(players.Count);
@@ -321,7 +605,7 @@ namespace DreamTech.Leaderboard.League
                 SimulatedPlayer player = players[rank];
                 standings.Add(new LeaderboardEntry(player.PlayerId, player.DisplayName, player.Trophies, rank));
             }
-            return new LeagueGroupSnapshot(window, _data.ActiveTierIndex, standings, _options.LocalPlayerId);
+            return new LeagueGroupSnapshot(window, tierIndex, standings, _options.LocalPlayerId);
         }
 
         /// <summary>
@@ -397,15 +681,26 @@ namespace DreamTech.Leaderboard.League
 
         // ---------------------------------------------------------------- Hạ tầng
 
+        /// <summary>
+        /// Đầu mọi lượt gọi: độ trễ giả lập, từ chối (lỗi tạm) lượt gọi đã bị <see cref="DebugResetSimulation"/> bỏ lại, rồi lỗi mạng giả lập.
+        /// Phần còn lại của lượt gọi chạy đồng bộ sau hàm này nên lượt bị huỷ không bao giờ chạm tới dữ liệu hay nơi lưu.
+        /// </summary>
         private async Task BeginCallAsync(CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            int generationAtStart = Volatile.Read(ref _resetGeneration);
 #if UNITY_WEBGL && !UNITY_EDITOR
             // WebGL player không có thread pool: Task.Delay không đáng tin, bỏ qua độ trễ.
             await Task.CompletedTask;
 #else
             if (LatencyMilliseconds > 0) await Task.Delay(LatencyMilliseconds, cancellationToken);
 #endif
+            if (generationAtStart != Volatile.Read(ref _resetGeneration))
+            {
+                // Lỗi tạm, KHÔNG phải OperationCanceledException: token của nơi gọi không bị huỷ, nên ném huỷ ở đây làm widget / host
+                // hiểu nhầm là người dùng huỷ và đứng mãi ở trạng thái đang tải. Lỗi tạm thì nơi gọi báo lỗi + thử lại được.
+                throw new SimulatedLeagueException("Lượt gọi bắt đầu trước khi dữ liệu mô phỏng bị xoá — bỏ, không ghi gì. Gọi lại để đọc dữ liệu mới.");
+            }
             if (!_failNextCall) return;
             _failNextCall = false;
             throw new SimulatedLeagueException("Lỗi giả lập từ SimulatedLeagueGroupService.FailNextCall().");
@@ -430,93 +725,6 @@ namespace DreamTech.Leaderboard.League
             public string DisplayName { get; }
             public long Trophies { get; }
             public int ReachedOrder { get; }
-        }
-    }
-
-    /// <summary>Phần dữ liệu mô phỏng lưu trên máy.</summary>
-    internal sealed class SimulatedLeagueData
-    {
-        private const int CurrentFormat = 1;
-
-        public int TierIndex;
-        public string ActiveSeasonId;
-        public DateTime ActiveSeasonStart;
-        public DateTime ActiveSeasonEnd;
-        public int ActiveTierIndex;
-        public long LocalTrophies;
-        public readonly HashSet<string> AppliedGrantIds = new HashSet<string>(StringComparer.Ordinal);
-        public readonly List<SeasonResult> Results = new List<SeasonResult>();
-
-        public bool HasActiveSeason => !string.IsNullOrEmpty(ActiveSeasonId);
-
-        public void ClearActiveSeason()
-        {
-            ActiveSeasonId = null;
-            ActiveSeasonStart = default;
-            ActiveSeasonEnd = default;
-            ActiveTierIndex = 0;
-            LocalTrophies = 0;
-            AppliedGrantIds.Clear();
-        }
-
-        public string Encode()
-        {
-            var record = new LeagueTextRecord(CurrentFormat);
-            record.SetInt("tier", TierIndex);
-            if (HasActiveSeason)
-            {
-                record.SetString("active.season", ActiveSeasonId);
-                record.SetLong("active.start", ActiveSeasonStart.Ticks);
-                record.SetLong("active.end", ActiveSeasonEnd.Ticks);
-                record.SetInt("active.tier", ActiveTierIndex);
-                record.SetLong("active.trophies", LocalTrophies);
-                var grantIds = new List<string>(AppliedGrantIds);
-                grantIds.Sort(StringComparer.Ordinal);
-                record.SetInt("active.grants", grantIds.Count);
-                for (int index = 0; index < grantIds.Count; index++)
-                {
-                    record.SetString("active.grant" + index.ToString(CultureInfo.InvariantCulture), grantIds[index]);
-                }
-            }
-            record.SetInt("results", Results.Count);
-            for (int index = 0; index < Results.Count; index++)
-            {
-                record.SetResult("result" + index.ToString(CultureInfo.InvariantCulture), Results[index]);
-            }
-            return record.Encode();
-        }
-
-        /// <summary>Chuỗi hỏng hoặc khác định dạng → null (bắt đầu lại từ đầu).</summary>
-        public static SimulatedLeagueData Decode(string text)
-        {
-            if (!LeagueTextRecord.TryDecode(text, out LeagueTextRecord record) || record.Format != CurrentFormat) return null;
-            var data = new SimulatedLeagueData { TierIndex = record.GetInt("tier", 0) };
-
-            string activeSeasonId = record.GetString("active.season", string.Empty);
-            long startTicks = record.GetLong("active.start", 0);
-            long endTicks = record.GetLong("active.end", 0);
-            if (activeSeasonId.Length > 0 && endTicks > startTicks && startTicks >= DateTime.MinValue.Ticks && endTicks <= DateTime.MaxValue.Ticks)
-            {
-                data.ActiveSeasonId = activeSeasonId;
-                data.ActiveSeasonStart = new DateTime(startTicks, DateTimeKind.Utc);
-                data.ActiveSeasonEnd = new DateTime(endTicks, DateTimeKind.Utc);
-                data.ActiveTierIndex = record.GetInt("active.tier", data.TierIndex);
-                data.LocalTrophies = Math.Max(0, record.GetLong("active.trophies", 0));
-                int grantCount = record.GetInt("active.grants", 0);
-                for (int index = 0; index < grantCount; index++)
-                {
-                    string grantId = record.GetString("active.grant" + index.ToString(CultureInfo.InvariantCulture), string.Empty);
-                    if (grantId.Length > 0) data.AppliedGrantIds.Add(grantId);
-                }
-            }
-
-            int resultCount = record.GetInt("results", 0);
-            for (int index = 0; index < resultCount; index++)
-            {
-                SeasonResult result = record.GetResult("result" + index.ToString(CultureInfo.InvariantCulture));
-                if (result != null) data.Results.Add(result);
-            }
-            return data;
         }
     }
 }

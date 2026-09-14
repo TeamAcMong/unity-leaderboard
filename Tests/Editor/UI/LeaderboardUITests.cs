@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using DreamTech.Leaderboard.EditorTools;
@@ -228,6 +229,47 @@ namespace DreamTech.Leaderboard.UI.Tests
             }
         }
 
+        /// <summary>Bọc một backend; lượt gọi kế tiếp ném OperationCanceledException KHÔNG gắn với token nào (huỷ lạc).</summary>
+        private sealed class StrayCancellationLeaderboardService : ILeaderboardService
+        {
+            private readonly ILeaderboardService _inner;
+
+            public StrayCancellationLeaderboardService(ILeaderboardService inner)
+            {
+                _inner = inner;
+            }
+
+            public bool ThrowOnNextCall;
+
+            public string LocalPlayerId => _inner.LocalPlayerId;
+            public string SeasonKey => _inner.SeasonKey;
+
+            public Task<LeaderboardEntry> GetLocalEntryAsync(CancellationToken cancellationToken)
+            {
+                ThrowIfRequested();
+                return _inner.GetLocalEntryAsync(cancellationToken);
+            }
+
+            public Task<LeaderboardEntry> SubmitScoreAsync(long score, CancellationToken cancellationToken)
+            {
+                ThrowIfRequested();
+                return _inner.SubmitScoreAsync(score, cancellationToken);
+            }
+
+            public Task<IReadOnlyList<LeaderboardEntry>> GetRangeAsync(int offset, int limit, CancellationToken cancellationToken)
+            {
+                ThrowIfRequested();
+                return _inner.GetRangeAsync(offset, limit, cancellationToken);
+            }
+
+            private void ThrowIfRequested()
+            {
+                if (!ThrowOnNextCall) return;
+                ThrowOnNextCall = false;
+                throw new OperationCanceledException("Backend bỏ lượt gọi cũ — không ai huỷ lượt trình bày.");
+            }
+        }
+
         [SetUp]
         public void SetUp()
         {
@@ -313,6 +355,45 @@ namespace DreamTech.Leaderboard.UI.Tests
 
             Task<LeaderboardPresentResult> retried = _widget.PresentAsync(new LeaderboardPresentRequest(_board, BoardPresentMode.Browse), CancellationToken.None);
             Assert.AreEqual(PresentOutcome.Completed, RunToCompletion(retried).Outcome);
+            Assert.IsFalse(_widget.StatusView.IsShowingError);
+        }
+
+        /// <summary>
+        /// Adapter ném <see cref="OperationCanceledException"/> mà không ai huỷ lượt trình bày (vd dịch vụ bỏ lượt gọi cũ sau khi xoá
+        /// dữ liệu). Trước đây widget coi là huỷ: kết thúc Cancelled, không tắt Loading, không có nút thử lại — đứng mãi ở "Loading".
+        /// </summary>
+        [Test]
+        public void StrayCancellationFromAdapter_ReportsFailedAndShowsError_ThenRetryWorks()
+        {
+            var strayService = new StrayCancellationLeaderboardService(_service) { ThrowOnNextCall = true };
+            var board = new LeaderboardBoard(new LeaderboardBoardSettings("widget-stray-cancel", FetchWindowSettings.Default, RankTierRule.Default),
+                                             strayService, _scoreSource, new InMemoryLeaderboardSnapshotStore());
+            _widget.Arm();
+
+            Task<LeaderboardPresentResult> failed = _widget.PresentAsync(new LeaderboardPresentRequest(board, BoardPresentMode.Browse), CancellationToken.None);
+
+            Assert.IsTrue(failed.IsCompleted, "Không được đứng mãi ở trạng thái đang tải");
+            Assert.AreEqual(PresentOutcome.Failed, failed.Result.Outcome);
+            Assert.IsInstanceOf<OperationCanceledException>(failed.Result.Error);
+            Assert.IsTrue(_widget.StatusView.IsShowingError, "Phải hiện lỗi kèm nút thử lại");
+
+            Task<LeaderboardPresentResult> retried = _widget.PresentAsync(new LeaderboardPresentRequest(board, BoardPresentMode.Browse), CancellationToken.None);
+            Assert.AreEqual(PresentOutcome.Completed, RunToCompletion(retried).Outcome);
+            Assert.IsFalse(_widget.StatusView.IsShowingError);
+        }
+
+        /// <summary>Huỷ thật bằng token của host vẫn là Cancelled, không hiện lỗi.</summary>
+        [Test]
+        public void HostTokenCancelled_ReportsCancelled_WithoutError()
+        {
+            var cancellation = new CancellationTokenSource();
+            cancellation.Cancel();
+            _widget.Arm();
+
+            Task<LeaderboardPresentResult> task = _widget.PresentAsync(new LeaderboardPresentRequest(_board, BoardPresentMode.Browse), cancellation.Token);
+
+            Assert.IsTrue(task.IsCompleted);
+            Assert.AreEqual(PresentOutcome.Cancelled, task.Result.Outcome);
             Assert.IsFalse(_widget.StatusView.IsShowingError);
         }
 

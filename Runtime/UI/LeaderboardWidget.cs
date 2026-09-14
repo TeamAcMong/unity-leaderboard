@@ -185,12 +185,15 @@ namespace DreamTech.Leaderboard.UI
                 cancellationToken.ThrowIfCancellationRequested();
                 BeginShow(request, loadTask.Result);
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 if (this != null && generation == _presentGeneration) CompletePresent(PresentOutcome.Cancelled, null);
             }
             catch (Exception exception)
             {
+                // Gồm cả OperationCanceledException KHÔNG đến từ token của lượt trình bày (adapter / dịch vụ ném huỷ lạc, vd bỏ lượt gọi
+                // cũ sau khi xoá dữ liệu): không ai huỷ lượt này, coi là huỷ thì widget đứng mãi ở "Loading" không có nút thử lại.
+                // Lượt đã bị lượt mới thay thế thì vẫn thoát êm ở dòng dưới.
                 if (this == null || generation != _presentGeneration) return;
                 Debug.LogWarning("[Leaderboard] Không trình bày được board '" + request.Board.BoardId + "': " + exception.Message, this);
                 if (statusView && _context != null) statusView.ShowError(_context.Text.ErrorMessage, _context.Text.Retry);

@@ -15,7 +15,7 @@ và âm thanh/haptic. Cùng một widget đặt được vào popup, màn riêng
 **Package Manager → `+` → Add package from git URL:**
 
 ```
-https://github.com/TeamAcMong/unity-leaderboard.git#0.1.0
+https://github.com/TeamAcMong/unity-leaderboard.git#0.2.1
 ```
 
 hoặc thêm vào `Packages/manifest.json`:
@@ -23,7 +23,7 @@ hoặc thêm vào `Packages/manifest.json`:
 ```json
 {
   "dependencies": {
-    "com.dreamtech.leaderboard": "https://github.com/TeamAcMong/unity-leaderboard.git#0.1.0"
+    "com.dreamtech.leaderboard": "https://github.com/TeamAcMong/unity-leaderboard.git#0.2.1"
   }
 }
 ```
@@ -37,9 +37,9 @@ Tag chỉ chứa nội dung package (tách bằng `git subtree split`), nên cà
 
 | Unity | uGUI / TextMeshPro | Đã chạy |
 |---|---|---|
-| 6000.6.0f1 | uGUI 2.6.0 (TMP tích hợp, `com.unity.textmeshpro` 5.0.0 là shim) | 99 test EditMode + 5 test PlayMode của scene demo |
-| 2022.3.62f2 | uGUI 1.0.0 + TMP 3.0.7 | 99 test EditMode |
-| 2022.3.62f2 | uGUI + TMP 3.2.0-pre.12 | 99 test EditMode + chạy thật trong Icon Match |
+| 6000.6.0f1 | uGUI 2.6.0 (TMP tích hợp, `com.unity.textmeshpro` 5.0.0 là shim) | 0.2.1: 244 test EditMode (110 leaderboard + 134 League) + 13 test PlayMode (scene demo + bảng thử League) |
+| 2022.3.62f2 | uGUI 1.0.0 + TMP 3.0.7 | 0.2.1: 244 test EditMode |
+| 2022.3.62f2 | uGUI + TMP 3.2.0-pre.12 | 0.1.0: 99 test EditMode + chạy thật trong Icon Match |
 
 TMP 3.2 / uGUI 2.0 đổi `enableWordWrapping` thành `textWrappingMode`. Chỗ duy nhất dùng tới (công cụ Editor) chọn nhánh qua
 define `DREAMTECH_LEADERBOARD_TMP_WRAPPING_MODE` do `versionDefines` của asmdef Editor bật.
@@ -166,6 +166,8 @@ Ví dụ đầy đủ chạy thật: `Assets/IconMatch/MLGameKitBridge/PopupLead
 | `PresentFinished` | Event bắn cùng lúc task hoàn tất |
 
 `PresentOutcome`: `Completed`, `Skipped`, `Cancelled`, `Failed`. Khi `Failed`, widget hiện thông báo lỗi + nút Retry.
+`Cancelled` chỉ khi token của lượt trình bày thật sự bị huỷ (host huỷ, `Disarm`, lượt mới thay thế). Backend ném
+`OperationCanceledException` mà không ai huỷ lượt đó (huỷ lạc) được coi là lỗi tải → `Failed` + Retry, không đứng mãi ở Loading.
 
 Widget **không làm gì trong `OnEnable`** (popup của MLGameKit không bao giờ tắt GameObject) và **không tự tra board**:
 host truyền board vào, nên phụ thuộc nhìn thấy được.
@@ -295,7 +297,7 @@ Chạy trong Test Runner (EditMode) hoặc qua MCP `tests-run`:
 | Assembly | Phủ |
 |---|---|
 | `DreamTech.Leaderboard.Tests` | Domain (hạng, tier, thay đổi hạng, dựng row, kế hoạch tải), Mock, board (kéo điểm, chỉ submit khi tốt hơn, retry, huỷ, 1 reveal/board), timeline (skip ở **mọi tick** cho 120→108, 900→600, 300→5), toán |
-| `DreamTech.Leaderboard.UI.Tests` | Contract prefab, row view dùng lại vẫn diễn đúng pha, vòng đời widget (Arm/Present/Disarm, exception → `Failed`), chữ trên avatar |
+| `DreamTech.Leaderboard.UI.Tests` | Contract prefab, row view dùng lại vẫn diễn đúng pha, vòng đời widget (Arm/Present/Disarm, exception → `Failed`, huỷ lạc của backend → `Failed`, token host huỷ → `Cancelled`), chữ trên avatar |
 | `DreamTech.Leaderboard.League.Tests` | Luật League (vùng, kết thúc mùa, streak, cúp, bảng thưởng, lịch mùa), codec lưu trạng thái, `LeagueGroupServiceContract`, nhóm mô phỏng, `LeagueSystem` |
 | `DreamTech.Leaderboard.Demo.Tests` (chỉ trong dev repo, PlayMode) | Chạy scene demo thật: leo 12 hạng ở cả 3 host, skip trước hạ cánh, đóng trước hạ cánh rồi diễn lại, #1 + người chơi mới, lỗi backend |
 
@@ -315,10 +317,13 @@ không tốn gì, xoá `Runtime/League` + `Tests/Editor/League` là gỡ sạch,
 
 ```csharp
 var rules = new LeagueRules(ladder, rewardTable: rewardTable);
+var store = new PlayerPrefsLeagueTextStore();
+var cheatClock = new OffsetLeagueClock(new SystemLeagueClock(), store, "clock.offset"); // offset cheat được lưu
+var clock = new MonotonicLeagueClock(cheatClock, store, "clock.highWater");           // giờ League không bao giờ lùi
 LeagueSystem league = new LeagueSystemBuilder("main", rules, streakLadder)
     .WithGroupService(new SimulatedLeagueGroupService(options, rules, clock, store)) // ← đổi sang backend thật ở đây
     .WithSchedule(new FixedLengthSeasonSchedule(anchorUtc, TimeSpan.FromDays(7)))
-    .WithClock(clock)                    // SystemLeagueClock, hoặc OffsetLeagueClock để cheat tua giờ
+    .WithClock(clock)                    // CÙNG đồng hồ với dịch vụ nhóm
     .WithTextStore(store)                // PlayerPrefsLeagueTextStore, hoặc save system của game
     .WithRewardGranter(rewardGranter)    // phát quà vào kho đồ của game
     .WithFeatureGate(featureGate)        // tính năng đã mở chưa
@@ -341,9 +346,55 @@ Game gọi:
 Luật nào cũng thay được bằng một dòng `With…` hoặc tham số của `LeagueRules`: vùng lên/xuống, kết quả mùa, streak, cúp mỗi
 trận, bảng thưởng, lịch mùa.
 
+**Đồng hồ và cheat tua giờ.** Mùa tính từ giờ, nên giờ lùi = mùa lùi. Lắp như ví dụ trên:
+- `OffsetLeagueClock(inner, store, key)` lưu độ lệch cheat — tắt/mở app không làm giờ League về lại giờ thật. Bản
+  `OffsetLeagueClock(inner)` (không lưu) chỉ nên dùng cho test/demo.
+- `MonotonicLeagueClock(inner, store, key)` trả `max(giờ bọc trong, mốc cao nhất từng thấy)` và lưu mốc (ghi có tiết chế: chỉ
+  khi mốc tiến thêm ít nhất 1 phút). `IsInnerBehind` báo giờ máy đang chậm hơn mốc.
+- Cheat "xoá dữ liệu League" phải gọi cả `simulation.DebugResetSimulation()`, `league.DebugClearLocalState()`,
+  `cheatClock.Offset = TimeSpan.Zero` **và** `clock.ResetHighWater()` — thiếu bước cuối thì League kẹt ở giờ đã tua tới.
+- Dịch vụ mô phỏng tự phòng thủ kể cả khi không cắm đồng hồ không-lùi: đồng hồ lùi thì giữ nguyên mùa đang giữ, không mở lại
+  mùa đã khép, mỗi mùa tối đa một kết quả. Dịch vụ và `LeagueSystem` phải dùng **cùng** một đồng hồ: lượt gọi mang mùa chưa bắt
+  đầu theo đồng hồ của dịch vụ bị từ chối bằng `SimulatedLeagueException` (lỗi tạm, lần gọi sau đọc lại mùa), còn lượt gọi đang
+  chạy dở lúc `DebugResetSimulation()` thất bại bằng `SimulatedLeagueException` (lỗi tạm — không phải
+  `OperationCanceledException`, vì token của nơi gọi không bị huỷ; host lọc huỷ thành "người dùng huỷ" sẽ đứng mãi ở Loading) và
+  không ghi gì — cheat xoá dữ liệu giữa lúc đang gọi không làm League kẹt ở mùa đã tua tới. Catch của game quanh lượt gọi League
+  chỉ nên coi là huỷ khi token của chính nó đã huỷ.
+- Dữ liệu mô phỏng lưu định dạng 2 (từ 0.2.1). Dữ liệu định dạng 1 của 0.2.0 bị bỏ, dịch vụ bắt đầu lại từ đầu (bậc khởi đầu,
+  không mùa đang giữ, không kết quả cũ). Không hạ package về 0.2.0 được: 0.2.0 không đọc định dạng 2 và cũng bắt đầu lại.
+
+**Cúp quanh lúc đổi mùa.** Cúp thắng đầu mùa mới, và mọi cúp của mùa cũ còn trong hàng chờ, đều được tính. Cúp tới muộn cho
+mùa đã khép được tính lại vào kết quả nếu người chơi chưa xem / chưa nhận; đã chốt thì dịch vụ ném
+`LeagueTrophyGrantRejectedException`, `LeagueSystem` bỏ grant khỏi hàng chờ và bắn `TrophyGrantRejected` (game ghi log /
+analytics ở đó). `GetPendingSeasonResultAsync` trả null khi còn cúp mùa cũ chưa gửi được, hoặc khi kết quả dịch vụ trả về thuộc một
+mùa còn cúp chờ gửi (lượt gọi vắt qua mốc đổi mùa), để không hiện kết quả thiếu cúp — lần gọi sau gửi được thì kết quả hiện đủ cúp.
+Kết quả chưa xem / chưa nhận không bao giờ bị bỏ khi dịch vụ mô phỏng thu gọn sổ theo `SimulatedLeagueOptions.MaximumStoredResults`
+(số sổ được tạm vượt giới hạn, xem / nhận xong thì tự thu gọn).
+Grant mang cửa sổ mùa lúc thắng (`LeagueTrophyGrant.Season`): thắng ở một mùa mà mọi lần gửi trong mùa đó đều thất bại, lần gửi
+được đầu tiên rơi vào mùa sau, thì dịch vụ dựng một mùa đã khép cho mùa bị "nhảy qua" đó, có kết quả riêng — không mất cúp. Kết
+quả không phụ thuộc thứ tự lượt gọi: trang / bảng đã kịp tải mùa sau (dịch vụ đã giữ, hoặc đã mở rồi khép, những mùa **trống** phía
+sau) thì sổ vẫn được chèn đúng chỗ và các mùa trống phía sau được tính lại theo bậc mới. Mùa phía sau đã có cúp (hoặc kết quả đã
+chốt) thì grant bị từ chối `UnknownSeason` và báo qua `TrophyGrantRejected`.
+`FlushPendingTrophiesAsync` gọi chồng nhau dùng chung một lượt gửi; token của một người gọi chỉ làm người đó thôi chờ, lượt gửi chạy
+tiếp cho người khác (chỉ dừng khi mọi người chờ đều huỷ) — luồng kết quả mùa bị huỷ không làm trang League hỏi bảng mùa mới trước
+khi cúp mùa cũ gửi xong. Lượt tải bảng của `LeagueBoardService` cũng vậy: HUD và popup cùng tải, HUD bị tắt thì popup vẫn nhận bảng.
+`LeagueBoardService.SubmitScoreAsync` gửi cúp xong thì không dùng lại lượt tải mở trước lúc đó (entry trả về luôn có cúp vừa gửi).
+Bảng trong cache chỉ "tươi" 0.5 giây, đo bằng cả thời gian thực lẫn giờ League: giờ máy chậm hơn mốc của `MonotonicLeagueClock`
+(giờ League đứng yên) không làm bảng cũ được dùng mãi.
+
 **Viết adapter backend mới:** cài `ILeagueGroupService` rồi tạo một lớp con của `LeagueGroupServiceContract` trong test —
-5 test đó là hợp đồng hành vi (sort + rank liên tục, cộng cúp idempotent, cúp gửi trễ sau khi hết mùa vẫn tính cho mùa cũ,
-rương nhận đúng một lần, kết quả còn chờ tới khi xem xong và nhận xong).
+đó là hợp đồng hành vi (ghi ở XML doc của `ILeagueGroupService`): sort + rank liên tục, cộng cúp idempotent, cúp gửi trễ sau
+khi hết mùa vẫn tính cho mùa cũ, cúp đầu mùa mới không mất, mọi grant mùa cũ xếp hàng đều tính, grant tới muộn tính lại kết
+quả chưa chốt / bị từ chối khi đã chốt, mỗi mùa một kết quả, xem + nhận idempotent, đồng hồ lùi không mở lại mùa đã khép, grant
+của mùa bị nhảy qua được tính cho mùa đó (cả khi dịch vụ còn giữ mùa trước, đã sang mùa sau, có mùa trống đã khép nằm giữa, hay mùa
+đầu tiên nó giữ là mùa trống phía sau) và bị từ chối khi mùa phía sau đã có cúp.
+Task của adapter hoàn tất trên thread nào cũng được (SDK mạng hay hoàn tất trên thread nền): game gọi League từ main thread, League
+không dùng `ConfigureAwait(false)`, nên phần sau mỗi await (ghi PlayerPrefs, `StateChanged`, đọc đồng hồ) quay về main thread. Phần
+việc chạy trên thread nền BÊN TRONG adapter thì không được đụng API chỉ-main-thread của Unity.
 
 **Bảng thử khi chưa có UI:** `LeagueDebugPanel.Create(league, simulation, clock, featureGate)` bày mọi thao tác ra nút IMGUI
-và vẽ bảng nhóm. Dùng trong dev project (`Assets/Demo/LeagueDemo.unity`) hoặc bật bằng cheat ngay trong game thật.
+và vẽ bảng nhóm. Nút "Xoá dữ liệu" xoá luôn mốc của `MonotonicLeagueClock` (truyền qua overload
+`Create(league, simulation, clock, monotonicClock, featureGate)`, hoặc tự nhận khi `league.Clock` là đồng hồ không-lùi).
+Giờ máy + offset đang chậm hơn mốc thì "→ hết mùa" vẫn tua tới đúng cuối mùa theo giờ League, "Tua +1h/+6h" bù phần chậm để giờ
+League tiến đúng số giờ (`AdvanceLeagueTime`; `AdvanceTime` cộng thẳng vào offset).
+Dùng trong dev project (`Assets/Demo/LeagueDemo.unity`) hoặc bật bằng cheat ngay trong game thật.

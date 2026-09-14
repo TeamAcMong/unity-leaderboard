@@ -114,6 +114,10 @@ namespace DreamTech.Leaderboard.Tests
         public int SubmitCallCount { get; private set; }
         public int RangeCallCount { get; private set; }
         public bool FailNextSubmit { get; set; }
+        public int LocalEntryCallCount { get; private set; }
+
+        /// <summary>Chạy sau khi đã lấy entry nhưng trước khi trả về — giả lập việc xảy ra lúc chờ mạng (vd đổi mùa). Null = không làm gì.</summary>
+        public Action WhileGetLocalEntryInFlight { get; set; }
 
         public void SetPlayer(string playerId, long score)
         {
@@ -123,7 +127,10 @@ namespace DreamTech.Leaderboard.Tests
         public Task<LeaderboardEntry> GetLocalEntryAsync(CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return Task.FromResult(FindEntry(LocalPlayerId));
+            LocalEntryCallCount++;
+            LeaderboardEntry entry = FindEntry(LocalPlayerId);
+            WhileGetLocalEntryInFlight?.Invoke();
+            return Task.FromResult(entry);
         }
 
         public Task<LeaderboardEntry> SubmitScoreAsync(long score, CancellationToken cancellationToken)

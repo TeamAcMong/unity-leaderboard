@@ -53,9 +53,15 @@ namespace DreamTech.Leaderboard.League
             for (int index = 0; index < PendingTrophyGrants.Count; index++)
             {
                 string prefix = "trophyGrant" + index.ToString(CultureInfo.InvariantCulture);
-                record.SetString(prefix + ".id", PendingTrophyGrants[index].GrantId);
-                record.SetString(prefix + ".season", PendingTrophyGrants[index].SeasonId);
-                record.SetInt(prefix + ".trophies", PendingTrophyGrants[index].Trophies);
+                LeagueTrophyGrant grant = PendingTrophyGrants[index];
+                record.SetString(prefix + ".id", grant.GrantId);
+                record.SetString(prefix + ".season", grant.SeasonId);
+                record.SetInt(prefix + ".trophies", grant.Trophies);
+                if (grant.Season != null)
+                {
+                    record.SetLong(prefix + ".seasonStart", grant.Season.StartUtc.Ticks);
+                    record.SetLong(prefix + ".seasonEnd", grant.Season.EndUtc.Ticks);
+                }
             }
 
             record.SetInt("rewards", PendingRewards.Count);
@@ -85,10 +91,13 @@ namespace DreamTech.Leaderboard.League
                 string grantId = record.GetString(prefix + ".id", string.Empty);
                 string seasonId = record.GetString(prefix + ".season", string.Empty);
                 int trophies = record.GetInt(prefix + ".trophies", 0);
-                if (grantId.Length > 0 && seasonId.Length > 0 && trophies > 0)
-                {
-                    state.PendingTrophyGrants.Add(new LeagueTrophyGrant(grantId, seasonId, trophies));
-                }
+                if (grantId.Length == 0 || seasonId.Length == 0 || trophies <= 0) continue;
+
+                // Bản lưu trước 0.2.1 không có cửa sổ mùa của grant → grant chỉ có id mùa (Season = null).
+                SeasonWindow season = TryReadSeasonWindow(record, prefix, seasonId);
+                state.PendingTrophyGrants.Add(season != null
+                    ? new LeagueTrophyGrant(grantId, season, trophies)
+                    : new LeagueTrophyGrant(grantId, seasonId, trophies));
             }
 
             int rewardCount = record.GetInt("rewards", 0);
@@ -100,6 +109,16 @@ namespace DreamTech.Leaderboard.League
                 if (grantId.Length > 0 && !package.IsEmpty) state.PendingRewards.Add(new PendingLeagueReward(grantId, package));
             }
             return state;
+        }
+
+        /// <summary>Thiếu một mốc, hoặc mốc vô lý (kết thúc không sau bắt đầu, ngoài khoảng của <see cref="DateTime"/>) → null.</summary>
+        private static SeasonWindow TryReadSeasonWindow(LeagueTextRecord record, string prefix, string seasonId)
+        {
+            if (!record.Has(prefix + ".seasonStart") || !record.Has(prefix + ".seasonEnd")) return null;
+            long startTicks = record.GetLong(prefix + ".seasonStart", 0);
+            long endTicks = record.GetLong(prefix + ".seasonEnd", 0);
+            if (startTicks < DateTime.MinValue.Ticks || endTicks > DateTime.MaxValue.Ticks || endTicks <= startTicks) return null;
+            return new SeasonWindow(seasonId, new DateTime(startTicks, DateTimeKind.Utc), new DateTime(endTicks, DateTimeKind.Utc));
         }
     }
 }

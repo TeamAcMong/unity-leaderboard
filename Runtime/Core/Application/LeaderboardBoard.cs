@@ -32,6 +32,12 @@ namespace DreamTech.Leaderboard
     {
         private static readonly IReadOnlyList<LeaderboardEntry> EmptyEntries = Array.Empty<LeaderboardEntry>();
 
+        /// <summary>
+        /// Số lượt sync tối đa của một lần tải khi khoá mùa cứ đổi trong lúc sync. Mốc đổi mùa rơi đúng lúc tải là hiếm; đổi liên tiếp
+        /// nhiều lần chỉ có khi đồng hồ bị tua trong lúc tải — khi đó dừng lại với khoá của lượt sync cuối (vẫn khớp entry).
+        /// </summary>
+        internal const int MaximumSyncAttemptsWhileSeasonChanges = 3;
+
         private readonly LeaderboardBoardSettings _settings;
         private readonly ILeaderboardService _service;
         private readonly IScoreSource _scoreSource;
@@ -93,13 +99,28 @@ namespace DreamTech.Leaderboard
             return entry;
         }
 
+        /// <summary>
+        /// Sync rồi tải đúng đoạn dữ liệu cần. Khoá mùa đi kèm thay đổi (<see cref="RankChange.SeasonKey"/>) là khoá đọc NGAY TRƯỚC
+        /// lượt sync sinh ra entry của người chơi — không đọc sau sync: mốc đổi mùa rơi vào lúc đang tải (độ trễ mạng) thì entry
+        /// thuộc mùa cũ còn khoá đọc sau đã là mùa mới, snapshot ghi (hạng mùa cũ, khoá mùa mới) và lần mở sau diễn RankUp / RankDown
+        /// giả thay vì NEW. Khoá đổi trong lúc sync thì sync lại (tối đa <see cref="MaximumSyncAttemptsWhileSeasonChanges"/> lượt) để
+        /// entry và khoá cùng thuộc mùa mới.
+        /// </summary>
         public async Task<BoardScene> LoadSceneAsync(BoardPresentMode mode, CancellationToken cancellationToken)
         {
+            string seasonKey = _service.SeasonKey;
             LeaderboardEntry local = await SyncScoreAsync(cancellationToken);
+            for (int attempt = 1; attempt < MaximumSyncAttemptsWhileSeasonChanges; attempt++)
+            {
+                string seasonKeyAfterSync = _service.SeasonKey;
+                if (string.Equals(seasonKeyAfterSync, seasonKey, StringComparison.Ordinal)) break;
+                seasonKey = seasonKeyAfterSync;
+                local = await SyncScoreAsync(cancellationToken);
+            }
 
             RankChange change = mode == BoardPresentMode.RevealIfPending
-                ? RankChange.Resolve(LoadSnapshot(), local, _service.SeasonKey)
-                : RankChange.Browse(local);
+                ? RankChange.Resolve(LoadSnapshot(), local, seasonKey)
+                : RankChange.Browse(local, seasonKey);
             FetchPlan plan = FetchWindowPlanner.Plan(change, _settings.Fetch);
 
             // Top và đoạn quanh người chơi tải song song.
@@ -115,10 +136,16 @@ namespace DreamTech.Leaderboard
             return new BoardScene(BoardId, rows, localIndex, change, _settings.TierRule, plan, mode);
         }
 
+        /// <summary>
+        /// Ghi snapshot "đã xem" theo mùa của bảng đã tải (<see cref="RankChange.SeasonKey"/>), không theo mùa lúc gọi: màn diễn
+        /// dài vài giây, mùa đổi giữa chừng mà ghi theo mùa mới thì lần mở sau so hạng mùa cũ với bảng mùa mới và diễn RankUp /
+        /// RankDown giả thay vì NEW. Thay đổi tạo không kèm mùa (<see cref="RankChange.Create"/>) thì dùng mùa hiện tại.
+        /// </summary>
         public void MarkRevealed(in RankChange change)
         {
             if (!change.HasLocalEntry) return;
-            _snapshotStore.Save(BoardId, new RevealSnapshot(change.ToRank, change.ToScore, _service.SeasonKey));
+            string seasonKey = change.SeasonKey ?? _service.SeasonKey;
+            _snapshotStore.Save(BoardId, new RevealSnapshot(change.ToRank, change.ToScore, seasonKey));
         }
 
         /// <summary>Quên lần xem cuối: lần mở sau sẽ diễn lại như người chơi mới. Dành cho cheat/debug.</summary>
