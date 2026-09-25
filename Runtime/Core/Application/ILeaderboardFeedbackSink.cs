@@ -16,6 +16,15 @@ namespace DreamTech.Leaderboard
         Celebrate = 7,
         Skipped = 8,
         RevealFinished = 9,
+
+        /// <summary>
+        /// Row mình vừa tới ranh giới của phần HOST tự trình bày (<c>MotionSettings.HostPresentedTopRanks</c>, ví dụ bục top 3)
+        /// và màn diễn DỪNG ở đó chờ host diễn cú lên bục (thanh thành cờ, hai cờ đổi chỗ) rồi gọi <c>ReleasePodiumHold()</c>.
+        ///
+        /// <para>Chỉ phát khi cờ bật và màn LÊN HẠNG đáp vào phần đó; đúng một lần, sau mọi nhịp Pass của đoạn leo trong list và
+        /// trước Land. Bị bỏ qua trước khi tới ranh giới thì KHÔNG phát — host nhận Skipped và dựng thẳng trạng thái cuối.</para>
+        /// </summary>
+        PodiumTakeover = 10,
     }
 
     /// <summary>Ngữ cảnh đi kèm một nhịp. Sink tự quy ra cao độ âm / độ mạnh rung.</summary>

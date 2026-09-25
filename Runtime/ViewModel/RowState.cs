@@ -28,12 +28,30 @@ namespace DreamTech.Leaderboard.ViewModel
         private float _slotElapsed;
         private float _slotDuration;
         private bool _isSlotTweening;
+        private bool _isSlotTweenLinear;
+
+        private bool _isGlowEnvelopeActive;
+        private float _glowFadeInDuration;
+        private float _glowElapsed;
+        private bool _isGlowReleased;
+        private float _glowReleaseElapsed;
+        private float _glowReleaseDelay;
+        private float _glowReleaseDuration;
+        private float _glowReleaseFrom;
 
         private float _introDelay;
         private float _introElapsed;
         private bool _isIntroPlaying;
 
-        private float _flashDecayPerSecond;
+        private float _flashDecayPeak;
+        private float _flashDecayDuration = 0.0001f;
+        private float _flashDecayElapsed;
+        private float _flashDecayPower = 1f;
+        private float _flashPeak;
+        private float _flashRiseDuration;
+        private float _flashRiseElapsed;
+        private float _flashRiseFrom;
+        private bool _isFlashRising;
 
         public RowState(BoardRow row, float slot)
         {
@@ -73,8 +91,17 @@ namespace DreamTech.Leaderboard.ViewModel
         /// <summary>Lớp loé trắng, tự tắt dần.</summary>
         public float Flash { get; private set; }
 
+        /// <summary>
+        /// Độ loé tương đối (0..1) so với đỉnh của lần loé gần nhất — để thứ khác (viền glow) đi theo HÌNH của cú loé mà
+        /// không cần biết đỉnh tuyệt đối là bao nhiêu.
+        /// </summary>
+        public float FlashLevel => _flashDecayPeak > 0f ? Math.Min(1f, Flash / _flashDecayPeak) : 0f;
+
         public float IntroAlpha { get; private set; }
         public float IntroOffset { get; private set; }
+
+        /// <summary>Độ lùi NGANG còn lại của intro. Xem <c>MotionSettings.IntroOffsetX</c>.</summary>
+        public float IntroOffsetX { get; private set; }
         public float IntroScale { get; private set; }
 
         public double LastScoreChangeTime { get; private set; }
@@ -83,6 +110,9 @@ namespace DreamTech.Leaderboard.ViewModel
         public int ContentVersion { get; private set; }
 
         public bool IsSlotTweening => _isSlotTweening;
+
+        /// <summary>Glow đang chạy theo đồng hồ riêng (xem <c>MotionSettings.GlowFadeInDuration</c>) — timeline không ghi <see cref="GlowBoost"/>.</summary>
+        public bool IsGlowEnvelopeActive => _isGlowEnvelopeActive;
         public bool IsIntroPlaying => _isIntroPlaying;
 
         /// <summary>Slot row sẽ dừng lại (đích của tween đang chạy, hoặc Slot hiện tại).</summary>
@@ -100,6 +130,31 @@ namespace DreamTech.Leaderboard.ViewModel
         public int RankRollDirection => _rankRollDirection;
 
         public TimedEffect BadgePunchTiming => _badgePunchTiming;
+
+        /// <summary>
+        /// Mốc đồng hồ model lúc "dòng lên hạng" (mũi tên nổi trong row) bắt đầu; NaN = không có.
+        /// Chỉ ghi THỜI ĐIỂM — cách vẽ (mấy mũi, bay nhanh chậm) là việc của view, nên hai view cùng render một
+        /// row vẫn ra y hệt nhau.
+        /// </summary>
+        public double RankUpStreamStartTime { get; private set; } = double.NaN;
+
+        /// <summary>Mốc dòng lên hạng thôi sinh mũi tên mới (lúc đáp); NaN = còn đang chạy hoặc không có.</summary>
+        public double RankUpStreamEndTime { get; private set; } = double.NaN;
+
+        public bool HasRankUpStream => !double.IsNaN(RankUpStreamStartTime);
+
+        /// <summary>
+        /// Host giành row này khỏi list NGAY từ frame này: list coi độ hiện diện là 0 (không view, kể cả khi đang ghim).
+        /// Mặc định false.
+        ///
+        /// <para>Dùng khi host thay row bằng proxy của riêng nó đúng lúc proxy bắt đầu bay — ví dụ thanh của người chơi tách
+        /// khỏi list để bay lên thành cờ hạng 3 trong lúc model vẫn giữ nó ở ô ranh giới chờ host thả cổng. Chỉ dựa vào Slot
+        /// thì thanh gốc còn nằm yên đó suốt cú bay: hai hình của cùng một người trên màn hình.</para>
+        ///
+        /// <para>Cờ không tự tắt: host bật thì host tắt, ở MỌI đường thoát (xong, bỏ qua, đóng trang). Model là của một lần
+        /// trình bày nên quên tắt cũng chỉ ảnh hưởng tới hết lần đó.</para>
+        /// </summary>
+        public bool IsHiddenFromList { get; set; }
 
         // ---------------------------------------------------------------- Hạng / điểm
 
@@ -165,8 +220,50 @@ namespace DreamTech.Leaderboard.ViewModel
 
         public void FlashNow(float alpha, float duration)
         {
+            FlashNow(alpha, duration, 0f, 1f);
+        }
+
+        public void FlashNow(float alpha, float duration, float riseDuration)
+        {
+            FlashNow(alpha, duration, riseDuration, 1f);
+        }
+
+        /// <summary>
+        /// Loé sáng: lên tới <paramref name="alpha"/> trong <paramref name="riseDuration"/> giây (OutQuad; 0 = tức thì),
+        /// rồi tắt trong <paramref name="duration"/> giây theo <c>(1 − p)^decayPower</c> (1 = tắt đều, như cũ).
+        /// </summary>
+        public void FlashNow(float alpha, float duration, float riseDuration, float decayPower)
+        {
+            _flashDecayPeak = alpha;
+            _flashDecayDuration = Math.Max(0.0001f, duration);
+            _flashDecayElapsed = 0f;
+            _flashDecayPower = decayPower > 0f ? decayPower : 1f;
+            if (riseDuration > 0f && alpha > Flash)
+            {
+                _flashPeak = alpha;
+                _flashRiseDuration = riseDuration;
+                _flashRiseElapsed = 0f;
+                _flashRiseFrom = Flash;
+                _isFlashRising = true;
+                return;
+            }
+            _isFlashRising = false;
             Flash = alpha;
-            _flashDecayPerSecond = alpha / Math.Max(0.0001f, duration);
+        }
+
+
+        /// <summary>Bắt đầu dòng lên hạng (xem <see cref="RankUpStreamStartTime"/>).</summary>
+        public void StartRankUpStream(double now)
+        {
+            RankUpStreamStartTime = now;
+            RankUpStreamEndTime = double.NaN;
+        }
+
+        /// <summary>Thôi sinh mũi tên mới; những mũi đang bay tự tắt theo nhịp của view. Gọi thừa là vô hại.</summary>
+        public void EndRankUpStream(double now)
+        {
+            if (!HasRankUpStream || !double.IsNaN(RankUpStreamEndTime)) return;
+            RankUpStreamEndTime = now;
         }
 
         // ---------------------------------------------------------------- Tween nội bộ
@@ -174,11 +271,56 @@ namespace DreamTech.Leaderboard.ViewModel
         /// <summary>Trượt Slot tới vị trí mới, ease-out mượt (không nảy).</summary>
         public void TweenSlot(float target, float duration)
         {
+            TweenSlot(target, duration, false);
+        }
+
+        /// <summary>Như trên; <paramref name="linear"/> = đi đều (ví dụ người bị vượt dời xuống một ô tuyến tính lúc đáp).</summary>
+        public void TweenSlot(float target, float duration, bool linear)
+        {
             _slotFrom = Slot;
             _slotTo = target;
             _slotElapsed = 0f;
             _slotDuration = Math.Max(0.0001f, duration);
             _isSlotTweening = true;
+            _isSlotTweenLinear = linear;
+        }
+
+        /// <summary>
+        /// Glow chạy theo đồng hồ riêng: hiện dần (smoothstep) trong <paramref name="fadeInDuration"/> giây rồi giữ sáng cho
+        /// tới <see cref="ReleaseGlowEnvelope"/>.
+        /// </summary>
+        public void StartGlowEnvelope(float fadeInDuration)
+        {
+            _isGlowEnvelopeActive = true;
+            _glowFadeInDuration = Math.Max(0.0001f, fadeInDuration);
+            _glowElapsed = 0f;
+            _isGlowReleased = false;
+            GlowBoost = 0f;
+        }
+
+        /// <summary>Chờ <paramref name="delay"/> giây rồi tắt glow trong <paramref name="duration"/> giây (smoothstep).</summary>
+        public void ReleaseGlowEnvelope(float delay, float duration)
+        {
+            if (!_isGlowEnvelopeActive || _isGlowReleased) return;
+            _isGlowReleased = true;
+            _glowReleaseElapsed = 0f;
+            _glowReleaseDelay = Math.Max(0f, delay);
+            _glowReleaseDuration = Math.Max(0.0001f, duration);
+            _glowReleaseFrom = GlowBoost;
+        }
+
+        /// <summary>Bỏ ngay glow theo đồng hồ riêng (đóng trang, lỗi) — glow về 0.</summary>
+        public void StopGlowEnvelope()
+        {
+            _isGlowEnvelopeActive = false;
+            _isGlowReleased = false;
+            GlowBoost = 0f;
+        }
+
+        private static float SmoothStep(float t)
+        {
+            t = Easing.Clamp01(t);
+            return t * t * (3f - 2f * t);
         }
 
         public void StartIntro(float delay)
@@ -207,7 +349,7 @@ namespace DreamTech.Leaderboard.ViewModel
             {
                 _slotElapsed += deltaTime;
                 float progress = Easing.Clamp01(_slotElapsed / _slotDuration);
-                Slot = Easing.LerpUnclamped(_slotFrom, _slotTo, Easing.OutCubic(progress));
+                Slot = Easing.LerpUnclamped(_slotFrom, _slotTo, _isSlotTweenLinear ? progress : Easing.OutCubic(progress));
                 if (progress >= 1f)
                 {
                     Slot = _slotTo;
@@ -220,13 +362,56 @@ namespace DreamTech.Leaderboard.ViewModel
                 _introElapsed += deltaTime;
                 float progress = Easing.Clamp01((_introElapsed - _introDelay) / Math.Max(0.0001f, settings.IntroDuration));
                 float eased = Easing.OutCubic(progress);
-                IntroAlpha = eased;
-                IntroOffset = (1f - eased) * settings.IntroOffset;
+
+                // Độ đục có nhịp RIÊNG khi được yêu cầu (xem MotionSettings.IntroFadeFraction). Mặc định 1 ⇒
+                // fadeProgress == progress ⇒ y hệt hành vi cũ.
+                float fadeFraction = settings.IntroFadeFraction > 0f ? settings.IntroFadeFraction : 1f;
+                IntroAlpha = Easing.OutCubic(Easing.Clamp01(progress / fadeFraction));
+
+                // Độ lùi có thể vượt quá chỗ đậu rồi bật về (MotionSettings.IntroSlideOvershoot). Mặc định 0 ⇒
+                // vẫn là OutCubic như cũ, không vượt. Đường cong vẽ tay (IntroSlideCurve) thắng cả hai.
+                float slide = settings.IntroSlideCurve != null
+                    ? settings.IntroSlideCurve.Evaluate(progress)
+                    : settings.IntroSlideOvershoot > 0f
+                        ? Easing.OutBack(progress, settings.IntroSlideOvershoot)
+                        : eased;
+                IntroOffset = (1f - slide) * settings.IntroOffset;
+                IntroOffsetX = (1f - slide) * settings.IntroOffsetX;
                 IntroScale = Easing.LerpUnclamped(settings.IntroStartScale, 1f, Easing.OutBack(progress, settings.IntroOvershoot));
                 if (progress >= 1f) FinishIntro();
             }
 
-            if (Flash > 0f) Flash = Math.Max(0f, Flash - _flashDecayPerSecond * deltaTime);
+            if (_isGlowEnvelopeActive)
+            {
+                if (!_isGlowReleased)
+                {
+                    _glowElapsed += deltaTime;
+                    GlowBoost = SmoothStep(_glowElapsed / _glowFadeInDuration);
+                }
+                else
+                {
+                    _glowReleaseElapsed += deltaTime;
+                    float fade = SmoothStep((_glowReleaseElapsed - _glowReleaseDelay) / _glowReleaseDuration);
+                    GlowBoost = _glowReleaseFrom * (1f - fade);
+                    if (fade >= 1f) StopGlowEnvelope();
+                }
+            }
+
+            if (_isFlashRising)
+            {
+                _flashRiseElapsed += deltaTime;
+                float riseProgress = Easing.Clamp01(_flashRiseElapsed / Math.Max(0.0001f, _flashRiseDuration));
+                Flash = Easing.LerpUnclamped(_flashRiseFrom, _flashPeak, Easing.OutQuad(riseProgress));
+                if (riseProgress >= 1f) _isFlashRising = false;
+            }
+            else if (Flash > 0f)
+            {
+                _flashDecayElapsed += deltaTime;
+                float remaining = 1f - Easing.Clamp01(_flashDecayElapsed / _flashDecayDuration);
+                Flash = _flashDecayPeak * (Math.Abs(_flashDecayPower - 1f) < 0.0001f
+                    ? remaining
+                    : (float)Math.Pow(remaining, _flashDecayPower));
+            }
         }
 
         private void FinishIntro()
@@ -234,6 +419,7 @@ namespace DreamTech.Leaderboard.ViewModel
             _isIntroPlaying = false;
             IntroAlpha = 1f;
             IntroOffset = 0f;
+            IntroOffsetX = 0f;
             IntroScale = 1f;
         }
     }

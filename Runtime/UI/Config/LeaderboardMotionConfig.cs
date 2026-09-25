@@ -17,6 +17,13 @@ namespace DreamTech.Leaderboard.UI
         public float GlowPulseAlpha = 0.2f;
         public float GlowPulseSpeed = 3f;
         public float GlowBoostAlpha = 0.35f;
+        [Tooltip("Glow sáng thêm theo cú loé của row: alpha glow += hệ số này × FlashLevel^GlowFlashPower (FlashLevel " +
+                 "= độ loé so với đỉnh, 0..1). 0 (mặc định) = glow không đi theo flash, như cũ. Clip tham chiếu: viền " +
+                 "sáng bừng lên cùng cú loé lúc đáp rồi tắt cùng nó.")]
+        public float GlowFlashAlpha;
+        [Tooltip("Hình của phần glow đi theo flash. 1 = tắt cùng nhịp flash; lớn hơn = viền tắt SỚM hơn lớp loé trên " +
+                 "row (clip: viền đã tắt quá nửa khi row mới tắt một phần tư).")]
+        public float GlowFlashPower = 1f;
         [Tooltip("Số bậc alpha của glow: chỉ ghi màu khi đổi bậc, tránh rebuild canvas mỗi frame.")]
         public int GlowAlphaSteps = 64;
         public float PillPopOvershoot = 1.8f;
@@ -57,6 +64,12 @@ namespace DreamTech.Leaderboard.UI
         public Vector2 ConfettiSizeMaximum = new Vector2(24f, 13f);
         public Vector2 TwinkleLifetimeRange = new Vector2(0.55f, 0.95f);
         public Vector2 TwinkleSizeRange = new Vector2(26f, 46f);
+        [Tooltip("Mỗi ngôi sao nở trễ ngẫu nhiên trong [0, giá trị này] giây — để chúng không bung cùng một nhịp. " +
+                 "0,25 (mặc định) như cũ.")]
+        public float TwinkleMaximumDelay = 0.25f;
+        [Tooltip("Phần sao rải TRÊN MẶT row (đều trong khung row) thay vì trên viền ngoài. 0 (mặc định) = chỉ viền, như " +
+                 "cũ. Clip tham chiếu: sao nở cả trên mặt hàng lẫn quanh viền.")]
+        [Range(0f, 1f)] public float TwinkleInsideFraction;
 
         [Header("Trạng thái")]
         [Tooltip("Chỉ hiện chữ Loading nếu tải lâu hơn khoảng này, để lần tải nhanh không bị nháy.")]
@@ -75,12 +88,44 @@ namespace DreamTech.Leaderboard.UI
         [SerializeField] private MotionSettings timeline = new MotionSettings();
         [SerializeField] private LeaderboardVisualSettings visuals = new LeaderboardVisualSettings();
 
+        [Header("Đường cong vẽ tay (0.4.0) — để trống = giữ easing cũ")]
+        [Tooltip("Độ lùi của cú trượt vào, 0 → 1 theo tiến độ. Thay OutCubic / OutBack(IntroSlideOvershoot).")]
+        [SerializeField] private AnimationCurve introSlideCurve = new AnimationCurve();
+        [Tooltip("Cú nhấc: cỡ 1 → LiftScale theo curve(p). Thay OutCubic.")]
+        [SerializeField] private AnimationCurve liftCurve = new AnimationCurve();
+        [Tooltip("Tiến độ cú leo (ô xuất phát → ô đích). Thay InOut theo ClimbEasePower.")]
+        [SerializeField] private AnimationCurve climbCurve = new AnimationCurve();
+        [Tooltip("Cú đáp: cỡ = lerp(cỡ lúc đáp, 1, curve(p)); giá trị ngoài [0,1] là vọt/hụt. Thay OutBack và cú đáp ba đoạn.")]
+        [SerializeField] private AnimationCurve landCurve = new AnimationCurve();
+
         public LeaderboardVisualSettings Visuals => visuals ?? (visuals = new LeaderboardVisualSettings());
 
         /// <summary>Bản sao để chụp lúc bắt đầu diễn (chỉnh config giữa chừng không làm lệch màn đang chạy).</summary>
         public MotionSettings CreateSettings()
         {
-            return (timeline ?? new MotionSettings()).Clone();
+            MotionSettings settings = (timeline ?? new MotionSettings()).Clone();
+            settings.IntroSlideCurve = ToKeyframeCurve(introSlideCurve);
+            settings.LiftCurve = ToKeyframeCurve(liftCurve);
+            settings.ClimbCurve = ToKeyframeCurve(climbCurve);
+            settings.LandCurve = ToKeyframeCurve(landCurve);
+            return settings;
+        }
+
+        /// <summary>
+        /// <c>AnimationCurve</c> → <see cref="KeyframeCurve"/> (view-model không có Unity). Không khoá = null = tắt. Chép đủ
+        /// tiếp tuyến lẫn trọng số: KeyframeCurve đánh giá y hệt AnimationCurve.
+        /// </summary>
+        public static KeyframeCurve ToKeyframeCurve(AnimationCurve curve)
+        {
+            if (curve == null || curve.length == 0) return null;
+            var keys = new KeyframeCurve.Key[curve.length];
+            for (int index = 0; index < curve.length; index++)
+            {
+                Keyframe key = curve[index];
+                keys[index] = new KeyframeCurve.Key(key.time, key.value, key.inTangent, key.outTangent,
+                                                    (KeyframeCurve.WeightedMode)(int)key.weightedMode, key.inWeight, key.outWeight);
+            }
+            return new KeyframeCurve(keys);
         }
     }
 }

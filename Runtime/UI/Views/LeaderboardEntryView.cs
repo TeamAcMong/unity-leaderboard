@@ -47,6 +47,7 @@ namespace DreamTech.Leaderboard.UI
 
         private bool _isInitialized;
         private ILeaderboardRowDecorator[] _decorators;
+        private LeaderboardRowRankUpStream _rankUpStream;
         private RectTransform _rectTransform;
         private RectTransform _pillTransform;
         private Vector2 _pillBasePosition;
@@ -116,6 +117,7 @@ namespace DreamTech.Leaderboard.UI
             if (backgroundImage) backgroundImage.enabled = !row.IsGap;
             if (row.IsGap)
             {
+                if (_rankUpStream) _rankUpStream.Hide();
                 if (gapText && gapText.text != context.Text.Gap) gapText.text = context.Text.Gap;
                 ApplyStyle(false, NoMedal, context.Theme);
                 NotifyDecorators(row, context);
@@ -137,6 +139,7 @@ namespace DreamTech.Leaderboard.UI
 
         public void Unbind()
         {
+            if (_rankUpStream) _rankUpStream.Hide();
             BoundRow = null;
             BoundContentVersion = -1;
         }
@@ -156,6 +159,7 @@ namespace DreamTech.Leaderboard.UI
             RenderScoreSwell(row, clock, context.DeltaTime, visuals);
             RenderPill(row, clock, context);
             RenderShine(row, clock);
+            if (_rankUpStream) _rankUpStream.Render(row, clock);
         }
 
         // ---------------------------------------------------------------- Khởi tạo
@@ -165,6 +169,8 @@ namespace DreamTech.Leaderboard.UI
             if (_isInitialized) return;
             _isInitialized = true;
             _decorators = GetComponentsInChildren<ILeaderboardRowDecorator>(true);
+            _rankUpStream = GetComponentInChildren<LeaderboardRowRankUpStream>(true);
+            if (_rankUpStream) _rankUpStream.Hide();
 
             if (pillGroup)
             {
@@ -363,7 +369,11 @@ namespace DreamTech.Leaderboard.UI
             if (!row.IsLocalPlayer || glowImage == null) return;
             LeaderboardVisualSettings visuals = context.Visuals;
             float pulse = 0.5f + 0.5f * Mathf.Sin((float)(clock * visuals.GlowPulseSpeed));
-            float alpha = Mathf.Clamp01(visuals.GlowBaseAlpha + visuals.GlowPulseAlpha * pulse + row.GlowBoost * visuals.GlowBoostAlpha);
+            float flashGlow = visuals.GlowFlashAlpha > 0f
+                ? visuals.GlowFlashAlpha * Mathf.Pow(row.FlashLevel, Mathf.Max(0.01f, visuals.GlowFlashPower))
+                : 0f;
+            float alpha = Mathf.Clamp01(visuals.GlowBaseAlpha + visuals.GlowPulseAlpha * pulse + row.GlowBoost * visuals.GlowBoostAlpha +
+                                        flashGlow);
             int steps = Mathf.Max(1, visuals.GlowAlphaSteps);
             int step = Mathf.RoundToInt(alpha * steps);
             if (step == _appliedGlowStep) return;

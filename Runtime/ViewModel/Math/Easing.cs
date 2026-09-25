@@ -48,6 +48,18 @@ namespace DreamTech.Leaderboard.ViewModel
             return t < 0.5f ? 4f * t * t * t : 1f - (float)Math.Pow(-2f * t + 2f, 3f) * 0.5f;
         }
 
+        /// <summary>
+        /// Họ InOut theo luỹ thừa: <paramref name="power"/> = 2 là InOutQuad, 3 là InOutCubic. Tốc độ đỉnh (giữa đường)
+        /// bằng <paramref name="power"/> lần tốc độ trung bình — số càng lớn càng dồn chuyển động vào giữa.
+        /// </summary>
+        public static float InOutPower(float t, float power)
+        {
+            if (power <= 1f) return Clamp01(t);
+            return t < 0.5f
+                ? 0.5f * (float)Math.Pow(2f * t, power)
+                : 1f - 0.5f * (float)Math.Pow(2f - 2f * t, power);
+        }
+
         /// <summary>Vượt quá đích rồi bật lại. Overshoot càng lớn càng nảy.</summary>
         public static float OutBack(float t, float overshoot)
         {

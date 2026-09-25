@@ -127,6 +127,31 @@ namespace DreamTech.Leaderboard.UI
             return completion.Task;
         }
 
+        /// <summary>
+        /// Báo cho màn diễn rằng nhịp riêng của host đã xong, bảng được phép xếp lại.
+        ///
+        /// <para>Chỉ có tác dụng khi <c>MotionSettings.WaitForHostRelease</c> bật. Gọi thừa là vô hại — đó là
+        /// chủ ý, vì host phải gọi được nó từ MỌI đường thoát (xong, lỗi, đóng trang) mà không phải theo dõi
+        /// xem mình đã gọi chưa.</para>
+        /// </summary>
+        public void ReleaseRevealHold()
+        {
+            _timeline?.ReleaseHostHold();
+        }
+
+        /// <summary>
+        /// Báo cho màn diễn rằng host đã diễn xong cú lên bục (<c>LeaderboardBeat.PodiumTakeover</c>): row mình được đi nốt
+        /// tới ô đích rồi đáp.
+        ///
+        /// <para>Chỉ có tác dụng khi <c>MotionSettings.HostPresentedTopRanks</c> bật và màn diễn đang / sắp đứng ở cổng bục.
+        /// Độc lập với <see cref="ReleaseRevealHold"/>. Gọi sớm, gọi thừa, gọi khi không có màn diễn đều vô hại — host gọi
+        /// nó ở MỌI đường thoát của cú diễn (xong, lỗi, bỏ qua, đóng trang) mà không phải nhớ mình đã gọi chưa.</para>
+        /// </summary>
+        public void ReleasePodiumHold()
+        {
+            _timeline?.ReleasePodiumHold();
+        }
+
         public void Skip()
         {
             _timeline?.RequestSkip();
@@ -273,6 +298,22 @@ namespace DreamTech.Leaderboard.UI
             _model.Advance(deltaTime);
             if (_timeline != null && _timeline.IsFinished && _presentCompletion != null)
             {
+                // Cổng giữ màn diễn hết giờ = host quên (hoặc không với tới được) ReleaseRevealHold. Màn diễn
+                // vẫn chạy tiếp nên KHÔNG có gì hỏng nhìn thấy được — đúng loại lỗi phải kêu, nếu không nó
+                // sống mãi dưới dạng "sao đoạn đầu nó khựng một nhịp".
+                if (_timeline.HostHoldTimedOut)
+                {
+                    Debug.LogWarning("[Leaderboard] Màn diễn đã chờ host gọi ReleaseRevealHold() quá " +
+                                     _context.Motion.HostHoldTimeout.ToString("0.0") +
+                                     "s rồi tự đi tiếp. Kiểm tra các đường thoát của nhịp host.", this);
+                }
+                if (_timeline.PodiumHoldTimedOut)
+                {
+                    Debug.LogWarning("[Leaderboard] Màn diễn đã đứng ở cổng bục chờ host gọi ReleasePodiumHold() quá " +
+                                     _context.Motion.HostHoldTimeout.ToString("0.0") +
+                                     "s rồi tự đi tiếp. Kiểm tra các đường thoát của cú lên bục ở host.", this);
+                }
+
                 FinishReveal(_timeline.WasSkipped ? PresentOutcome.Skipped : PresentOutcome.Completed, null);
             }
         }
@@ -305,6 +346,12 @@ namespace DreamTech.Leaderboard.UI
                 if (_timeline.HasReachedLanding) _lastRequest.Board?.MarkRevealed(_timeline.Change);
                 _timeline.ForceFinish();
             }
+            // Bỏ màn diễn cũ khỏi tay widget (model thì giữ — hình cũ vẫn phải đứng yên cho lúc fade / lúc chờ tải). Giữ lại là
+            // một màn diễn ĐÃ XONG nằm chờ: PresentAsync trên widget đang armed (quảng cáo cộng điểm, Retry) không đi qua Arm, và
+            // ở Update kế tiếp — trước khi dữ liệu mới về — Tick thấy "timeline xong + có lượt đang chờ" rồi kết thúc lượt MỚI
+            // bằng RankChange CŨ. Lượt diễn thật tới sau đó không còn completion nào: skip catcher, bám camera, ghim row, chặn
+            // cuộn tay và reveal lease kẹt tới Disarm; ReleasePodiumHold / ReleaseRevealHold lại chọc vào màn diễn cũ.
+            _timeline = null;
             ReleaseRevealLease();
             if (scrollView)
             {
@@ -352,6 +399,7 @@ namespace DreamTech.Leaderboard.UI
         void IRevealListener.OnLanded(RankTier tier, RowState localRow)
         {
             if (!celebrationView || !scrollView) return;
+            if (IsLandingPresentedByHost) return;
             if (!scrollView.TryGetRowBounds(localRow, celebrationView.RectTransform, out Rect bounds)) return;
             int bonus = (RankTier.Standard - tier) * _context.Visuals.TwinkleBonusPerTier;
             celebrationView.Twinkles(bounds, _context.Visuals.TwinkleCount + bonus, _context.Theme.TwinkleColor, _context.Visuals);
@@ -359,6 +407,7 @@ namespace DreamTech.Leaderboard.UI
 
         void IRevealListener.OnCelebrate(RankTier tier, RowState localRow)
         {
+            if (IsLandingPresentedByHost) return;
             LeaderboardVisualSettings visuals = _context.Visuals;
             Color color = _context.Theme.TierColor(tier);
             if (scrollView)
@@ -378,6 +427,13 @@ namespace DreamTech.Leaderboard.UI
                 if (count > 0) celebrationView.Confetti(bounds, count, _context.Theme.ConfettiPalette, visuals);
             }
         }
+
+        /// <summary>
+        /// Row mình ĐÁP vào phần host trình bày (<c>MotionSettings.HostPresentedTopRanks</c>): sao, tia sáng, banner, confetti
+        /// neo theo thanh của list đều bị bỏ — thanh đó nằm sau bục, không ai thấy, và host ăn mừng trên cờ của nó. Nhịp
+        /// (Land, Celebrate) vẫn phát cho sink như thường.
+        /// </summary>
+        private bool IsLandingPresentedByHost => _model != null && _model.LocalLandsOnPodium;
 
         void IRevealListener.OnTailRevealed(IReadOnlyList<RowState> tail)
         {
