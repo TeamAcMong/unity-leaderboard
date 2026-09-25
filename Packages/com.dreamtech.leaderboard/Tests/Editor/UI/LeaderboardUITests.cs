@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -10,6 +11,7 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using UnityEngine.TestTools;
 using Object = UnityEngine.Object;
 
 namespace DreamTech.Leaderboard.UI.Tests
@@ -409,6 +411,49 @@ namespace DreamTech.Leaderboard.UI.Tests
             Assert.IsTrue(task.IsCompleted);
             Assert.AreEqual(PresentOutcome.Cancelled, task.Result.Outcome);
             Assert.IsTrue(_board.HasUnrevealedChange, "Chưa tới nhịp hạ cánh thì lần mở sau phải diễn lại");
+        }
+
+        /// <summary>
+        /// Trình bày lại trên widget ĐANG armed (host không gọi Arm lại — quảng cáo cộng điểm, Retry) sau khi màn diễn trước đã
+        /// xong, và dữ liệu mới về chậm một nhịp (host chưa sẵn sàng): lượt mới KHÔNG được kết thúc bằng màn diễn cũ.
+        ///
+        /// <para>Trước đây CancelPresent để lại timeline cũ đã xong; Update kế tiếp thấy "timeline xong + có lượt đang chờ" và kết
+        /// thúc lượt MỚI bằng RankChange CŨ. Màn diễn thật tới sau đó không còn completion nào nên không bao giờ FinishReveal: skip
+        /// catcher bật, camera bám và row mình bị ghim, cuộn tay bị chặn, reveal lease kẹt tới Disarm. Test cũ không thấy vì luôn
+        /// Arm trước và Mock trả đồng bộ, nên timeline mới thay chỗ trước cả tick đầu.</para>
+        /// </summary>
+        [UnityTest]
+        public IEnumerator PresentAgainWhileArmed_DoesNotFinishTheNewRequestWithTheOldTimeline()
+        {
+            PrepareRankUp(120, 108);
+            LeaderboardPresentResult first = RunToCompletion(Present(BoardPresentMode.RevealIfPending));
+            Assert.AreEqual(PresentOutcome.Completed, first.Outcome);
+            Assert.IsTrue(_widget.IsArmed, "Tiền đề hỏng: widget phải còn armed sau khi diễn xong.");
+
+            _scoreSource.SetScore(_service.ScoreToReachRank(100));
+            var hostReady = new TaskCompletionSource<bool>();
+            Task<LeaderboardPresentResult> second = _widget.PresentAsync(
+                new LeaderboardPresentRequest(_board, BoardPresentMode.RevealIfPending, hostReady.Task), CancellationToken.None);
+
+            for (int tick = 0; tick < 10; tick++) _widget.AdvanceForTests(FrameDeltaTime);
+            Assert.IsFalse(second.IsCompleted, "Lượt mới đã bị kết thúc bằng màn diễn cũ trước khi dữ liệu mới kịp dựng.");
+            Assert.IsNull(_widget.CurrentTimeline, "Màn diễn cũ vẫn nằm trong tay widget sau khi có lượt trình bày mới.");
+            Assert.DoesNotThrow(() => _widget.ReleasePodiumHold());
+            Assert.DoesNotThrow(() => _widget.ReleaseRevealHold());
+
+            hostReady.SetResult(true);
+            for (int frame = 0; frame < 120 && _widget.CurrentTimeline == null && !second.IsCompleted; frame++) yield return null;
+            Assert.IsNotNull(_widget.CurrentTimeline, "Host đã sẵn sàng mà màn diễn mới chưa bắt đầu.");
+
+            LeaderboardPresentResult result = RunToCompletion(second);
+            Assert.AreEqual(PresentOutcome.Completed, result.Outcome);
+            Assert.AreEqual(RankChangeKind.RankUp, result.Change.Kind);
+            Assert.AreEqual(first.Change.ToRank, result.Change.FromRank, "Lượt mới phải kết thúc bằng thay đổi MỚI, không phải thay đổi cũ.");
+            Assert.AreEqual(100, result.Change.ToRank);
+            Assert.IsFalse(_board.HasUnrevealedChange);
+            Assert.IsFalse(_widget.SkipCatcher.gameObject.activeSelf, "Skip catcher kẹt bật sau màn diễn thứ hai.");
+            Assert.IsFalse(_widget.ScrollView.FollowLocalRow, "Camera còn bám row mình sau màn diễn thứ hai.");
+            Assert.IsFalse(_widget.ScrollView.PinLocalRow, "Row mình còn bị ghim sau màn diễn thứ hai.");
         }
 
         [Test]

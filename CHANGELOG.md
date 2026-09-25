@@ -3,6 +3,154 @@
 Mọi thay đổi đáng kể của package ghi ở đây. Định dạng theo [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 phiên bản theo [Semantic Versioning](https://semver.org/).
 
+## [0.4.0] - 2026-09-25
+
+Bản phát hành đầu tiên có các thay đổi của **0.3.0** — 0.3.0 chưa từng được tag, toàn bộ mục 0.3.0 bên dưới nằm trong 0.4.0.
+
+Nhóm mới: **nhịp lên hạng theo một game tham chiếu** (đường cong vẽ tay, tick đều khi leo, người bị vượt dồn xuống lúc đáp,
+glow hiện/tắt dần, nhịp nhẹ khi có điểm mà không đổi hạng). Tất cả opt-in: cấu hình mặc định giữ nguyên hành vi 0.3.0, chốt bằng
+dấu vân tay `RevealTimelineFlagOffTests` / `LeaderboardFlagOffRenderTests` (không ghi lại). Không đổi chữ ký public nào đang có; chỉ
+thêm.
+
+### Added
+- `KeyframeCurve` (`ViewModel/Math`, thuần C#): tính đường cong keyframe giống hệt `UnityEngine.AnimationCurve` (Hermite + Bézier
+  có trọng số) để tầng `noEngineReferences` chạy được curve vẽ tay. `LeaderboardMotionConfig.ToKeyframeCurve(AnimationCurve)`
+  đổi từ curve của Unity.
+- `MotionSettings.IntroSlideCurve` / `LiftCurve` / `ClimbCurve` / `LandCurve` (null = easing cũ) và bốn field `AnimationCurve`
+  tương ứng trên `LeaderboardMotionConfig` (trống = như cũ). LandCurve thay cả OutBack lẫn cú đáp ba đoạn; giá trị ngoài [0, 1] là
+  vọt / hụt.
+- `MotionSettings.IntroRowDelayOffset`: độ trễ lệch đầu cộng vào mọi row của cú trượt vào.
+- `BoardModel.StartIntro(topVisibleSlot, visibleRowCount)` + `BoardModel.IntroSettleSeconds`: số giây tới khi row cuối cùng THẤY
+  ĐƯỢC đậu xong — host dùng để nối nhịp tiếp theo mà không phải tự đoán độ trễ lớn nhất. Overload một tham số giữ nguyên. Khi
+  `HiddenLeadingSlots > 0` ô trên cùng không tính các ô sau bục.
+- `MotionSettings.DeferPassSlidesToLand` + `LandPassSlideDuration` (0,12 s): người bị vượt đứng yên suốt cú leo rồi dồn xuống
+  một lượt lúc row mình đáp.
+- `MotionSettings.ClimbTickInterval`: nhịp `Pass` phát đều theo thời gian (mốc k × interval trong cú leo) thay vì theo từng người
+  bị vượt. 0 = như cũ.
+- `MotionSettings.GlowFadeInDuration` / `GlowFadeOutDelay` / `GlowFadeOutDuration` (0,5 s): glow của row mình hiện dần từ lúc
+  nhấc, giữ suốt cú leo, tắt dần sau khi đáp. `RowState.StartGlowEnvelope` / `ReleaseGlowEnvelope` / `StopGlowEnvelope` /
+  `IsGlowEnvelopeActive`. 0 = như cũ.
+- `MotionSettings.QuietPulseInsteadOfBob`: lượt CÓ điểm mà không đổi hạng = nhấc + đáp (theo LiftCurve / LandCurve), không glow,
+  không nhún sin; lượt 0 điểm (`Unchanged`) chốt trạng thái cuối ngay. Đi cùng `HostOwnsScoreCount` thì pha đếm điểm dài 0 (host
+  đã đếm xong trong lúc giữ cổng).
+- `RowState.TweenSlot(target, duration, linear)`; `LeaderboardScrollView.TryGetRowView(row, out view)` (view đang vẽ row, để host
+  gắn hiệu ứng vào icon trong row).
+
+### Changed (với cấu hình mặc định)
+- `LeaderboardScrollView.SetModel(playIntro: true)` truyền `VisibleRowCapacity + 1` vào `StartIntro`. Chỉ ảnh hưởng
+  `IntroSettleSeconds` (giá trị mới); quỹ đạo và nhịp không đổi.
+
+### Tests
+- `KeyframeCurveParityTests`: so `KeyframeCurve` với `AnimationCurve` trên các curve phẳng / dốc / có trọng số / nhiều khoá, sai
+  số ≤ 1e-4.
+- `RevealTimelineReferenceMotionTests`: curve điều khiển nhấc / leo / đáp; tick đều khi leo (kể cả frame dài); người bị vượt dồn xuống lúc
+  đáp; glow hiện / tắt dần; nhịp nhẹ khi có điểm cùng hạng và chốt ngay khi 0 điểm; độ trễ lệch đầu của cú trượt vào;
+  `IntroSettleSeconds`.
+- Tổng 403 test EditMode (269 leaderboard + 134 League) + 13 PlayMode. Xanh trên Unity 6000.5.7f1 + uGUI 2.5.0 (403/403 EditMode,
+  13/13 PlayMode; dev project để 6000.6.0f1 — bản chạy thử bỏ hai module chỉ có ở 6000.6) và Unity 2022.3.62f2 + uGUI 1.0.0 +
+  TMP 3.0.7 (403/403 EditMode). Chạy thật trong Icon Match (2022.3.62f2, TMP 3.2.0-pre.12).
+
+## [0.3.0] - 2026-09-23
+
+_Chưa từng được tag riêng — phát hành trong 0.4.0._
+
+Hai nhóm thay đổi, tất cả opt-in: **bàn giao nhịp cho host + chỉnh cú lên hạng theo clip tham chiếu** (cờ / tham số mới mà
+mặc định giữ hành vi của 0.2.1, trừ hai điểm ghi ở "Changed") và **host tự trình bày các hạng đầu** (ví dụ bục ba cờ của
+Golden Race): list không vẽ thanh cho hạng 1..K, màn lên hạng đáp vào đó dừng ở ranh giới chờ host diễn cú lên bục. Không đổi
+chữ ký public nào đang có, enum chỉ thêm vào cuối.
+
+Cờ bục tắt (`HostPresentedTopRanks` = 0) thì quỹ đạo, nhịp và hình trùng khít code **ngay trước khi thêm cờ bục** — tức đã
+gồm nhóm thay đổi thứ nhất — chốt bằng dấu vân tay ghi từ code đó. Dấu vân tay KHÔNG so với 0.2.1.
+
+### Added — bàn giao nhịp cho host (mặc định tắt)
+- `MotionSettings.WaitForHostRelease` + `HostHoldTimeout` (8 s) + `LeaderboardWidget.ReleaseRevealHold()`: màn diễn đứng ở cuối
+  Intro chờ host (ví dụ dòng phần thưởng rót xuống row); hết giờ thì tự đi tiếp và widget cảnh báo. Lời thả có hiệu lực ở tick kế
+  tiếp bất kể độ dài frame; thả sớm không cắt ngắn `IntroWait`.
+- `MotionSettings.HostOwnsScoreCount`: timeline không đụng vào điểm hiển thị của row mình (host tự đếm).
+- `MotionSettings.RankFlipsBeforeRankMove`: lật số hạng + diễn nhịp "được lên hạng" ngay đầu màn, row vẫn bò lên như cũ.
+
+### Added — cú lên hạng (mặc định = hành vi 0.2.1)
+- Cú đáp ba đoạn `LandPeakScale` / `LandPeakAt` / `LandTroughScale` / `LandTroughAt` (0 = OutBack cũ); mốc trong pha đáp
+  `LandFlashAt`, `LandTwinklesAt` (-1 = như cũ, lúc chạm đích); `FlashRiseDuration`, `FlashDecayPower`, `LandGlowFadesLate`;
+  `RankUpPill`, `RankUpShine` (true = như cũ); `ClimbEasePower` (3 = InOutCubic cũ); `IntroSlideOvershoot`, `IntroFadeFraction`.
+- `RowState.FlashNow(alpha, duration, riseDuration[, decayPower])`, `RowState.FlashLevel`; mốc dòng lên hạng
+  `RowState.StartRankUpStream` / `EndRankUpStream` / `RankUpStreamStartTime` / `RankUpStreamEndTime` / `HasRankUpStream`;
+  `Easing.InOutPower`.
+- `LeaderboardRowRankUpStream`: mũi tên nổi trong row mình từ lúc nhấc tới lúc đáp. Bật bằng cách gắn component lên prefab row —
+  prefab không có thì không vẽ gì.
+- `LeaderboardVisualSettings.GlowFlashAlpha` / `GlowFlashPower` (glow sáng theo cú loé; 0 = tắt), `TwinkleMaximumDelay` (0,25 =
+  như cũ), `TwinkleInsideFraction` (0 = chỉ viền, như cũ); `CelebrationBurstView.starSpriteVariants` (trống = một kiểu sao).
+
+### Added — host tự trình bày các hạng đầu (mặc định tắt)
+- `MotionSettings.HostPresentedTopRanks` (int, mặc định 0 = tắt): các row có `Rank < K` do host trình bày; vẫn nằm trong model với
+  Slot như cũ (màn diễn cần chúng), chỉ phần vẽ được nhường cho host. Host đặt ô 0..K-1 sau bục bằng cách hạ `topPadding` đi
+  K × (rowHeight + spacing).
+- `MotionSettings.PodiumClimbDuration` (mặc định 0 = tới đích ngay frame được thả, không nhịp Pass / cuộn số) và
+  `MotionSettings.PodiumPassSlideDuration` (mặc định 0 = đặt Slot thẳng, không tween) cho đoạn sau cổng bục. Cổng bục hết giờ theo
+  `HostHoldTimeout` sẵn có.
+- `BoardModel.HiddenLeadingSlots` (số row đầu bảng cuối, liên tiếp, không phải "...", có `Rank < K`, **không bao giờ quá K** — hạng
+  bằng nhau thì row thứ K+1 ở lại list; có thể ít hơn K khi bảng tải thiếu / đứt quãng ngay dưới hạng 1, khi đó các ô từ đó tới K-1
+  là row của list nằm trong dải chừa cho bục), `BoardModel.ListPresence(row)` (0 sau bục, 1 trong list, lẻ khi trượt ra khỏi bục —
+  dùng chung cho list và host), `BoardModel.IsPresentedByHost(row)`, `BoardModel.LocalLandsOnPodium`.
+- `RowState.IsHiddenFromList`: host giành một row khỏi list đúng frame proxy của nó cất cánh.
+- `RevealPhase.PodiumHold`, `RevealPhase.PodiumClimb`; `LeaderboardBeat.PodiumTakeover` (phát đúng một lần khi row mình tới ranh giới,
+  sau mọi nhịp Pass của đoạn trong list, trước Land). `RevealTimeline.TakesPodium`, `RevealTimeline.ReleasePodiumHold()` (có hiệu
+  lực ở tick kế tiếp bất kể độ dài frame), `RevealTimeline.PodiumHoldTimedOut`. Kịch bản khi đáp vào bục: Lift → (Spin) → Climb tới
+  ô ranh giới (bỏ qua nếu bắt đầu ở ranh giới / đã trên bục) → PodiumHold → PodiumClimb → Land như cũ. Bỏ qua / `ForceFinish` ở mọi
+  pha coi như đã thả cổng; không đường nào treo.
+- `LeaderboardWidget.ReleasePodiumHold()` (độc lập với `ReleaseRevealHold()`, gọi thừa / sớm vô hại) + cảnh báo khi cổng bục hết giờ.
+- `LeaderboardScrollView.ListPresence(row)`, `GetRowAnchoredPosition(slot)`, `RenderContext`, `CreateRowProxy(row, parent)` /
+  `DestroyRowProxy(proxy)` (bản sao thanh ngoài pool, vẽ đúng dáng list đang vẽ row đó — vị trí, cỡ `Scale × IntroScale`, bóng
+  đổ — chỉ khác độ đục luôn đầy; huỷ nhầm view của list thì bỏ qua).
+
+### Changed (với cấu hình mặc định)
+- `FollowSmoothTime` ≤ 0 giờ là **bám neo** (camera nội suy theo slot giữa chỗ cuộn lúc bắt đầu và chỗ cuộn khi row về chỗ). Trước
+  đây 0 bị kẹp lên 0,0001 và vẫn là bám mềm. Game đang để 0 sẽ thấy camera khác; muốn bám mềm thì đặt > 0 (mặc định 0,12 không đổi).
+- Nhịp đáp: `Land` được phát TRƯỚC flash / shine / pill / sao (trước đây sau) — cùng một frame nên hình không khác, nhưng sink đọc
+  `RowState` ngay ở nhịp `Land` sẽ thấy flash / pill chưa bật. Mọi màn lên hạng ghi mốc dòng lên hạng vào `RowState` (vô hại khi
+  prefab row không có `LeaderboardRowRankUpStream`).
+
+### Changed (chỉ khi `HostPresentedTopRanks` > 0)
+- List: row có độ hiện diện 0 không có view (kể cả row mình đang ghim); độ hiện diện lẻ nhân vào độ đục.
+- Camera "đỉnh là nhà" khi row mình đáp lên bục: bám neo (và bám mềm) về cuộn 0 đúng lúc chạm ranh giới; `SetModel`,
+  `ScrollToLocalRow`, `RequestSnapToLocalRow` về 0 khi row mình đang sau bục / đã tới ranh giới.
+- Không có thanh dính cho người chơi đang (hoặc sẽ) ở trên bục; không tia sáng cho row mình đang sau bục.
+- Widget: đáp vào bục thì bỏ sao, tia sáng, banner, confetti neo theo thanh list (host ăn mừng trên cờ); nhịp Land / Celebrate vẫn
+  phát.
+- Planner: đáp lên bục thì số người diễn vượt được nới (có thể quá `AnimatedPasses`) cho tới ô ranh giới, để row mình luôn xuất
+  phát trong list và bục "trước" đủ K người cũ — kể cả khi `AnimatedPasses` nhỏ hơn khoảng cách tới ranh giới hay dải hạng liền
+  mạch bị cắt vì hạng bằng nhau.
+
+### Fixed
+- `PresentAsync` trên widget đang armed (không `Arm()` lại — Retry, trình bày lại sau quảng cáo) khi màn diễn trước đã xong và dữ
+  liệu mới về chậm: Update kế tiếp kết thúc lượt MỚI bằng `RankChange` của màn diễn CŨ; màn diễn thật tới sau đó không bao giờ
+  `PresentFinished`, skip catcher / bám camera / ghim row / chặn cuộn tay / reveal lease kẹt tới `Disarm`. Có từ 0.2.1.
+
+### Tests
+- `RevealTimelineFlagOffTests` (9): dấu vân tay từng tick (slot + hạng mọi row, cỡ / nhấc / glow / điểm / flash, mọi nhịp) của
+  #10→#2, #3→#2, #6→#1, #48→#37 (+ bỏ qua giữa chừng) với cấu hình mặc định và kiểu Golden Race, ghi từ code ngay trước khi có cờ
+  bục.
+- `LeaderboardFlagOffRenderTests` (4): dấu vân tay từng frame của widget mẫu (cuộn, vị trí / cỡ / độ đục / thứ tự vẽ của view,
+  banner) cho cùng các màn đó, ghi từ cùng code đó.
+- `RevealTimelinePodiumTests` (63): cờ bật mà không đáp vào bục thì trùng từng bit với cờ tắt (kể cả đáp đúng ô ranh giới, quay số
+  có đuôi, cấu hình kiểu host, bỏ qua); #10→#2 chờ ở ô 3 với người cũ hạng 3 còn ở ô 2, mọi nhịp Pass trước PodiumTakeover khi đoạn
+  sau cổng 0 giây; bắt đầu ở ranh giới (#4→#3, #4→#1) và đổi chỗ trên bục (#3→#2, #2→#1, #3→#1) chờ ngay sau Lift; nhảy quay số
+  (kể cả ít lượt diễn hơn khoảng cách tới ranh giới, và hạng bằng nhau cắt dải liền mạch) với bục "trước" đủ K người và row mình
+  trong list; đoạn sau cổng 0 giây / có diễn; lời thả cổng bục và cổng Intro có hiệu lực ở tick kế tiếp ở 120 Hz, 90 Hz, 60 Hz dao
+  động; thả sớm, hết giờ, bỏ qua ở mọi tick (kể cả host không bao giờ thả), `ForceFinish` lúc chờ, hai cổng độc lập; NEW / RankDown /
+  Unchanged không có cổng bục; `HiddenLeadingSlots` với dải đứt, hạng bằng nhau (trần K), tải thiếu; `ListPresence`,
+  `LocalLandsOnPodium`, `Clone`, mặc định tắt.
+- `LeaderboardPodiumUITests` (21): không view cho row sau bục (kể cả row mình đang ghim), không rò / không phình pool, độ đục theo
+  độ hiện diện, `IsHiddenFromList` không gây tạo lại view, camera về 0 lúc chờ (bám neo và bám mềm) và ở yên khi bắt đầu từ ranh
+  giới / trên bục, cuộn / snap tới mình về đỉnh — các test camera chạy với dải trên list đủ lớn để canh giữa các ô bục KHÁC 0 (có
+  kiểm tiền đề), không thanh dính (đối chứng cờ tắt có), không banner / tia sáng / sao khi đáp lên bục (đối chứng cờ tắt có), proxy
+  tạo / huỷ không đụng pool, proxy lúc nhận quyền trùng cỡ và vị trí thanh đang nhấc, `TryGetRowBounds` cho row sau bục, cảnh báo
+  hết giờ, bỏ qua lúc chờ, hình của màn lên hạng thường trùng khít khi bật cờ.
+- `WidgetLifecycleTests.PresentAgainWhileArmed_DoesNotFinishTheNewRequestWithTheOldTimeline`: trình bày lại không `Arm()`, host
+  sẵn sàng chậm một nhịp.
+- `RevealTimelineHostHandoffTests`, `RevealTimelineLandCurveTests`, `RevealTimelineRankUpFeedbackTests`,
+  `LeaderboardRowRankUpStreamTests`: cờ bàn giao cho host, cú đáp ba đoạn, nhịp "được lên hạng", dòng mũi tên.
+
 ## [0.2.1] - 2026-09-13
 
 Sửa các lỗi League lộ ra khi chơi thử thật trong Icon Match quanh lúc đổi mùa: mất cúp, mùa bị lùi, kết quả mùa trùng làm

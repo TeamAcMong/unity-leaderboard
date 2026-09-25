@@ -178,3 +178,8 @@ lại validator.
     chạy ngoài main thread (xem CHANGELOG). Test: Unity 6000.6.0f1 244/244 EditMode (110 leaderboard + 134 League) + 13/13
     PlayMode; Unity 2022.3.62f2 + TMP 3.0.7 244/244 EditMode.
   - Kế hoạch và design phân tích từ Figma nằm ở project Icon Match: `Assets/IconMatch/Docs/LEAGUE_PLAN.html`.
+- **0.4.0 (gộp 0.3.0 chưa từng tag):** host tự trình bày top K (`HostPresentedTopRanks`, bục của Golden Race) + bộ cờ nhịp theo
+  một game tham chiếu (curve vẽ tay qua `KeyframeCurve`, tick `Pass` theo đồng hồ, người bị vượt dồn xuống lúc đáp, glow theo đồng
+  hồ riêng, nhịp nhẹ khi có điểm mà không đổi hạng). Mọi cờ mặc định tắt; dấu vân tay cờ-tắt (`RevealTimelineFlagOffTests`,
+  `LeaderboardFlagOffRenderTests`) không được ghi lại. Repo public: không ghi tên game / class / asset của bản tham chiếu vào
+  package.

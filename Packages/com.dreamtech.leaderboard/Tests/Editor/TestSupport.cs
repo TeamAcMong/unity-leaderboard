@@ -56,6 +56,16 @@ namespace DreamTech.Leaderboard.Tests
             ScoreSource.SetScore(Service.ScoreToReachRank(targetRank));
             return Board.LoadSceneAsync(BoardPresentMode.RevealIfPending, CancellationToken.None).Result;
         }
+
+        /// <summary>Lượt CÓ điểm (+<paramref name="gain"/>) mà vẫn đứng hạng <paramref name="rank"/> ⇒ ScoreImproved.</summary>
+        public BoardScene LoadScoreImprovedScene(int rank, long gain = 1)
+        {
+            Service.SetLocalScore(Service.ScoreToReachRank(rank));
+            LeaderboardEntry before = Service.GetLocalEntryAsync(CancellationToken.None).Result;
+            Board.MarkRevealed(RankChange.Browse(before));
+            ScoreSource.SetScore(before.Score + gain);
+            return Board.LoadSceneAsync(BoardPresentMode.RevealIfPending, CancellationToken.None).Result;
+        }
     }
 
     /// <summary>Ghi lại mọi nhịp/sự kiện timeline để test đếm.</summary>

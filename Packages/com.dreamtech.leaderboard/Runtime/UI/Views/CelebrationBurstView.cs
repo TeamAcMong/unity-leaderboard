@@ -18,6 +18,9 @@ namespace DreamTech.Leaderboard.UI
         [Tooltip("Image mẫu (inactive) để nhân bản mảnh hạt.")]
         [SerializeField] private Image particleTemplate;
         [SerializeField] private Sprite starSprite;
+        [Tooltip("Các kiểu sao khác (ví dụ sao đặc + sao viền). Có thì mỗi ngôi sao bốc ngẫu nhiên một kiểu trong " +
+                 "starSprite + danh sách này; để trống = chỉ một kiểu như cũ.")]
+        [SerializeField] private Sprite[] starSpriteVariants;
         [SerializeField] private Sprite confettiSprite;
         [SerializeField, Min(1)] private int maximumPieces = 260;
 
@@ -65,11 +68,15 @@ namespace DreamTech.Leaderboard.UI
             float halfHeight = bounds.height * 0.5f;
             for (int index = 0; index < count; index++)
             {
-                Piece piece = Spawn(starSprite, PieceKind.Twinkle);
+                Piece piece = Spawn(PickStarSprite(), PieceKind.Twinkle);
                 if (piece == null) return;
                 // Rải trên viền ngoài của row (trên/dưới/hai đầu) để không che chữ.
                 Vector2 offset;
-                if (Random.value < 0.7f)
+                if (visuals.TwinkleInsideFraction > 0f && Random.value < visuals.TwinkleInsideFraction)
+                {
+                    offset = new Vector2(Random.Range(-halfWidth, halfWidth) * 0.92f, Random.Range(-halfHeight, halfHeight) * 0.8f);
+                }
+                else if (Random.value < 0.7f)
                 {
                     offset = new Vector2(Random.Range(-halfWidth, halfWidth), (Random.value < 0.5f ? -1f : 1f) * halfHeight * Random.Range(0.8f, 1.25f));
                 }
@@ -82,12 +89,20 @@ namespace DreamTech.Leaderboard.UI
                 piece.Gravity = 0f;
                 piece.Drag = 0.5f;
                 piece.Lifetime = Random.Range(visuals.TwinkleLifetimeRange.x, visuals.TwinkleLifetimeRange.y);
-                piece.Age = -Random.Range(0f, 0.25f);
+                piece.Age = -Random.Range(0f, Mathf.Max(0f, visuals.TwinkleMaximumDelay));
                 float size = Random.Range(visuals.TwinkleSizeRange.x, visuals.TwinkleSizeRange.y);
                 piece.Transform.sizeDelta = new Vector2(size, size);
                 piece.RotationSpeed = Random.Range(-60f, 60f);
                 Activate(piece, color);
             }
+        }
+
+        private Sprite PickStarSprite()
+        {
+            if (starSpriteVariants == null || starSpriteVariants.Length == 0) return starSprite;
+            int pick = Random.Range(0, starSpriteVariants.Length + 1);
+            Sprite variant = pick < starSpriteVariants.Length ? starSpriteVariants[pick] : null;
+            return variant != null ? variant : starSprite;
         }
 
         public void Confetti(Rect bounds, int count, Color[] palette, LeaderboardVisualSettings visuals)
