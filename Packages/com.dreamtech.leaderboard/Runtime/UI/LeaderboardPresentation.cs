@@ -10,15 +10,35 @@ namespace DreamTech.Leaderboard.UI
         /// <param name="hostReady">Hoàn tất khi animation mở của host xong (null = sẵn sàng ngay). Widget tải dữ liệu song song và
         /// chỉ bắt đầu intro khi task này xong hoặc hết timeout.</param>
         public LeaderboardPresentRequest(ILeaderboardBoard board, BoardPresentMode mode, Task hostReady = null)
+            : this(board, mode, hostReady, skipIntro: false)
+        {
+        }
+
+        /// <param name="skipIntro">
+        /// true = các row hiện NGAY ở chỗ của chúng, không trượt vào (xem <see cref="SkipIntro"/>). false = như constructor
+        /// ba tham số.
+        /// </param>
+        public LeaderboardPresentRequest(ILeaderboardBoard board, BoardPresentMode mode, Task hostReady, bool skipIntro)
         {
             Board = board;
             Mode = mode;
             HostReady = hostReady;
+            SkipIntro = skipIntro;
         }
 
         public ILeaderboardBoard Board { get; }
         public BoardPresentMode Mode { get; }
         public Task HostReady { get; }
+
+        /// <summary>
+        /// Bỏ đợt trượt vào của các row: danh sách dựng thẳng ở tư thế đứng (camera vẫn đặt vào row người chơi), màn diễn
+        /// (nếu có) bắt đầu từ đó. false (mặc định) = như cũ.
+        ///
+        /// <para>Dùng cho lượt trình bày LẠI trên một trang đã mở sẵn — ví dụ host cộng thêm điểm rồi diễn tiếp cú leo: bảng
+        /// đang đứng trên màn, cho nó trượt vào lần nữa là diễn lại một nhịp người chơi vừa xem xong. Đặt tên theo chiều
+        /// "bỏ" để giá trị mặc định của struct (<c>default</c>) vẫn là hành vi cũ.</para>
+        /// </summary>
+        public bool SkipIntro { get; }
     }
 
     public enum PresentOutcome

@@ -16,6 +16,9 @@ namespace DreamTech.Leaderboard.UI
     /// <item>Cờ <c>MotionSettings.HostPresentedTopRanks</c> bật: các ô đầu do host trình bày (bục) không có view; row trượt ra
     /// khỏi bục hiện dần theo <see cref="ListPresence"/>; camera coi đỉnh list là nhà khi row mình đáp lên bục; không có thanh
     /// dính cho người chơi đang ở trên bục. Host mượn hình thanh bằng <see cref="CreateRowProxy"/>.</item>
+    /// <item>Cú tiếp cận bục kiểu cuộn (<c>MotionSettings.PodiumApproachScrollSpeed</c>, <c>BoardModel.HasPodiumApproach</c>):
+    /// mở màn canh giữa ô xuất phát, camera đi theo đúng tiến độ của row mình, và — nếu prefab có
+    /// <see cref="FloatingRowLayer"/> — view của row mình được vẽ ở lớp nổi đó, ngoài mask của list.</item>
     /// </list>
     /// </summary>
     [DefaultExecutionOrder(100)]
@@ -46,6 +49,12 @@ namespace DreamTech.Leaderboard.UI
         [SerializeField, Min(0f)] private float stickyInset = 12f;
         [Tooltip("Số view tạo sẵn khi dựng lần đầu.")]
         [SerializeField, Min(0)] private int prewarmRowCount = 12;
+
+        [Header("Lớp nổi của row mình (0.6.0, tuỳ chọn)")]
+        [Tooltip("RectTransform RIÊNG nằm NGOÀI mask của list (không phải con của viewport), không chứa gì khác. Trong cú tiếp " +
+                 "cận bục kiểu cuộn (MotionSettings.PodiumApproachScrollSpeed > 0) list đặt nó trùng khung Content mỗi frame và vẽ " +
+                 "view của row mình trong đó, để ô ranh giới nằm dưới đáy khung nhìn (màn thấp, 4:3) vẫn thấy row. Trống = như cũ.")]
+        [SerializeField] private RectTransform floatingRowLayer;
 
         [Header("Ngưỡng thanh dính")]
         [SerializeField] private float stickyShowFraction = 0.6f;
@@ -92,12 +101,23 @@ namespace DreamTech.Leaderboard.UI
 
         public bool ForceHideSticky { get; set; }
 
+        /// <summary>
+        /// Mặc định TẮT (= hành vi cũ: mở màn canh vào row người chơi). Bật thì mỗi lần <see cref="SetModel"/> KHÔNG có cú tiếp cận
+        /// bục mở list ở ĐỈNH (chỗ cuộn 0) — cho màn chỉ-xem-bảng mà host tự hiện row người chơi ở chỗ khác (thanh ghim của host) và
+        /// muốn người chơi thấy đầu bảng trước. Đợt trượt vào tính theo chỗ cuộn này nên các hàng ở đỉnh trượt vào đúng nhịp.
+        /// Host đặt trước khi trình bày; list không tự đổi cờ này.
+        /// </summary>
+        public bool OpenAtTop { get; set; }
+
         /// <summary>Hệ số thời gian debug (chụp màn hình chậm). 1 = bình thường.</summary>
         public float TimeScale { get; set; } = 1f;
 
         public BoardModel Model => _model;
         public RectTransform Viewport => viewport;
         public RectTransform Content => content;
+
+        /// <summary>Lớp nổi của row mình (xem field <c>floatingRowLayer</c>); null = không bao giờ vẽ row ngoài mask.</summary>
+        public RectTransform FloatingRowLayer => floatingRowLayer;
         public LeaderboardEntryView RowPrefab => rowPrefab;
         public float RowHeight => rowHeight;
         public float TopPadding => topPadding;
@@ -138,6 +158,23 @@ namespace DreamTech.Leaderboard.UI
         /// <summary>Dựng list cho một model mới: căn giữa row người chơi (nếu có) và cho các row nổi lên lần lượt.</summary>
         public void SetModel(BoardModel model, bool playIntro)
         {
+            BindModel(model, playIntro, isStaged: false);
+        }
+
+        /// <summary>
+        /// Dựng list cho một model TRƯỚC khi host sẵn sàng (<c>LeaderboardVisualSettings.StageListBeforeHostReady</c>): mép trên ô của
+        /// row người chơi sát mép trên khung nhìn (kẹp trong khoảng cuộn được) — đỉnh list khi row đó đang nằm trong phần host trình
+        /// bày, không có row người chơi, hoặc list mở ở đỉnh (<see cref="OpenAtTop"/>) — và mọi row ở tư thế đầu của đợt trượt vào
+        /// (chưa hiện). Đợt trượt không chạy tới khi widget tick model; lượt trình bày thật gọi <see cref="SetModel"/> với CÙNG model
+        /// để canh lại và bắt đầu đợt trượt.
+        /// </summary>
+        public void StageModel(BoardModel model)
+        {
+            BindModel(model, playIntro: true, isStaged: true);
+        }
+
+        private void BindModel(BoardModel model, bool playIntro, bool isStaged)
+        {
             EnsureInitialized();
             ReleaseAllViews();
             StopSmoothScroll();
@@ -157,9 +194,75 @@ namespace DreamTech.Leaderboard.UI
             RefreshContentHeight();
             if (scrollRect) scrollRect.StopMovement();
             RowState localRow = _model.LocalRow;
-            SetScrollY(localRow != null ? LocalRowScrollTarget(localRow) : 0f);
-            if (playIntro) _model.StartIntro(Layout.TopVisibleSlot(GetScrollY()), VisibleRowCapacity + 1);
+            bool opensAtTop = OpenAtTop && !_model.HasPodiumApproach;
+            if (isStaged)
+            {
+                SetScrollY(localRow != null && !opensAtTop ? StagedScrollTarget(localRow) : 0f);
+            }
+            else
+            {
+                SetScrollY(localRow != null && !opensAtTop ? IntroScrollTarget(localRow) : 0f);
+                // Cú tiếp cận cuộn từ ĐÚNG chỗ này về đỉnh list (hay dừng hụt): báo hai đầu (đã kẹp) cho timeline tính thời lượng.
+                if (_model.HasPodiumApproach) ReportPodiumApproachScrollRange();
+            }
+            if (playIntro) StartModelIntro();
             Refresh(0f);
+        }
+
+        /// <summary>
+        /// Báo hai đầu của cú tiếp cận bục kiểu cuộn cho model: chỗ cuộn lúc mở màn, và chỗ cuộn cuối — 0 (đỉnh list), hay
+        /// <c>MotionSettings.PodiumApproachShortfallRows</c> × bước hàng khi lúc này vùng host trình bày ĐÃ khuất hẳn (chỗ cuộn ≥ mép
+        /// trên ô ranh giới <c>BoardModel.HiddenLeadingSlots</c>).
+        /// </summary>
+        private void ReportPodiumApproachScrollRange()
+        {
+            float start = GetScrollY();
+            MotionSettings settings = _model.Settings;
+            float shortfallRows = settings != null ? settings.PodiumApproachShortfallRows : 0f;
+            bool hostRegionOutOfView = start >= Layout.SlotToTop(_model.HiddenLeadingSlots);
+            float end = shortfallRows > 0f && hostRegionOutOfView ? shortfallRows * Layout.Stride : 0f;
+            _model.SetPodiumApproachScrollRange(start, end);
+        }
+
+        /// <summary>
+        /// Đợt trượt vào: mặc định các ô vừa khung nhìn tính từ ô trên cùng đang thấy; <c>MotionSettings.IntroUsesListBuffer</c>
+        /// thì cửa sổ ô mà một list ảo hoá đang giữ view (<see cref="VirtualListLayout.BufferedSlots"/>), đệm dưới lớn hơn khi
+        /// list mở ở một chỗ cuộn khác 0. Ô host trình bày bị <see cref="BoardModel.StartIntro(float, int)"/> cắt ra.
+        /// </summary>
+        private void StartModelIntro()
+        {
+            float scroll = GetScrollY();
+            MotionSettings settings = _model.Settings;
+            if (settings == null || !settings.IntroUsesListBuffer)
+            {
+                _model.StartIntro(Layout.TopVisibleSlot(scroll), VisibleRowCapacity + 1);
+                return;
+            }
+            float bufferBelow = scroll > 0f ? settings.IntroBufferBelowRecentred : settings.IntroBufferBelow;
+            Layout.BufferedSlots(scroll, ViewportHeight, settings.IntroBufferAbove, bufferBelow, out int firstSlot, out int slotCount);
+            int visibleFirst = Mathf.Max(firstSlot, _model.HiddenLeadingSlots);
+            _model.StartIntro(visibleFirst, Mathf.Max(0, firstSlot + slotCount - visibleFirst));
+        }
+
+        /// <summary>
+        /// Chỗ cuộn của list dựng sẵn (<see cref="StageModel"/>): mép trên ô của row mình sát mép trên khung nhìn, kẹp trong khoảng
+        /// cuộn được; đỉnh list khi row đó đang nằm trong phần host trình bày (ô &lt; <see cref="BoardModel.HiddenLeadingSlots"/>).
+        /// </summary>
+        private float StagedScrollTarget(RowState localRow)
+        {
+            if (localRow.Slot < _model.HiddenLeadingSlots) return 0f;
+            return Mathf.Clamp(Layout.SlotToTop(localRow.Slot), 0f, MaximumScroll);
+        }
+
+        /// <summary>
+        /// Chỗ cuộn lúc mở màn: như <see cref="LocalRowScrollTarget"/>, trừ cú tiếp cận bục kiểu cuộn — khi đó LUÔN canh giữa
+        /// ô xuất phát, kể cả ô ranh giới (camera phải đi một quãng cuộn thật về đỉnh list cùng nhịp với row mình).
+        /// </summary>
+        private float IntroScrollTarget(RowState localRow)
+        {
+            return _model.HasPodiumApproach
+                ? Layout.CenteredScroll(localRow.Slot, ViewportHeight, MaximumScroll)
+                : LocalRowScrollTarget(localRow);
         }
 
         public void Clear()
@@ -396,11 +499,18 @@ namespace DreamTech.Leaderboard.UI
                 hasActivatedView = true;
             }
 
+            // Chỉ canh lớp nổi khi row mình thật sự có view để đặt vào đó — row đã rời list (host giành thanh, đã lên bục) thì
+            // lớp nổi rỗng, không cần đi theo Content nữa.
+            bool isLocalRowFloating = IsLocalRowFloating && localRow != null && _activeViews.ContainsKey(localRow);
+            if (isLocalRowFloating) MirrorContentOnto(floatingRowLayer);
+
             foreach (KeyValuePair<RowState, LeaderboardEntryView> pair in _activeViews)
             {
                 RowState row = pair.Key;
                 LeaderboardEntryView view = pair.Value;
                 if (!ReferenceEquals(view.BoundRow, row) || view.BoundContentVersion != row.ContentVersion) view.Bind(row, _context);
+                // Lớp nổi trùng khung Content nên vị trí / cỡ tính trong hệ Content vẫn đúng y nguyên sau khi đổi cha.
+                PlaceUnderParent(view, isLocalRowFloating && row == localRow ? floatingRowLayer : content);
                 var position = new Vector2(row.IntroOffsetX, -layout.SlotToCenter(row.Slot) - row.IntroOffset);
                 // Độ hiện diện lẻ = row đang trượt ra từ sau bục: hiện dần theo đúng nhịp nó di chuyển. Cờ tắt thì luôn 1.
                 float presence = _model.ListPresence(row);
@@ -478,6 +588,18 @@ namespace DreamTech.Leaderboard.UI
 
             if (FollowLocalRow && localRow != null)
             {
+                if (_model.HasPodiumApproach && !float.IsNaN(_model.PodiumApproachStartScroll))
+                {
+                    // Cú tiếp cận bục kiểu cuộn: camera đi theo CÙNG tiến độ đã ease mà timeline vừa dùng cho Slot của row mình
+                    // (không bám mềm, không kẹp theo slot) — trên màn hình row đi đúng đường thẳng từ chỗ canh giữa tới ô ranh
+                    // giới, như danh sách và thẻ nổi của bản tham chiếu cùng chạy một đường cong từ cùng một frame. Trước cú tiếp
+                    // cận tiến độ là 0 (đứng ở chỗ canh giữa lúc mở màn), sau đó là 1 (đỉnh list — "nhà" của màn lên bục).
+                    _followVelocity = 0f;
+                    SetScrollY(Mathf.LerpUnclamped(_model.PodiumApproachStartScroll, _model.PodiumApproachEndScroll,
+                                                   _model.PodiumApproachProgress));
+                    return;
+                }
+
                 float target = Layout.CenteredScroll(localRow.Slot, ViewportHeight, MaximumScroll);
 
                 // Bám mềm cũng phải về "nhà" khi row mình đáp lên bục: lấy đích của bám neo (tới cuộn 0 đúng lúc chạm ranh giới)
@@ -694,6 +816,50 @@ namespace DreamTech.Leaderboard.UI
             return -1;
         }
 
+        /// <summary>
+        /// View của row mình đang được vẽ ở lớp nổi (ngoài mask): prefab có <c>floatingRowLayer</c> VÀ màn diễn của model có cú
+        /// tiếp cận bục kiểu cuộn. Thiếu một trong hai thì mọi view ở dưới Content như cũ.
+        ///
+        /// <para>Vì sao cần: ô ranh giới cách mép trên khung nhìn một khoảng cố định (vùng bục + nửa hàng), nên trên màn thấp (4:3,
+        /// khung nhìn chỉ ~550) nó nằm DƯỚI đáy khung nhìn — mask cắt mất row mình ở cuối cú tiếp cận. Bản tham chiếu vẽ tấm thẻ
+        /// của người chơi thành một lớp nổi riêng, không bị mask, và nó trôi qua cả dải nút.</para>
+        /// </summary>
+        private bool IsLocalRowFloating => floatingRowLayer != null && _model != null && _model.HasPodiumApproach;
+
+        /// <summary>
+        /// Đặt <paramref name="layer"/> trùng khít khung Content trong không gian thế giới (neo điểm, cùng pivot, cùng cỡ, cùng
+        /// vị trí / góc / tỉ lệ). View đổi cha sang lớp này giữ nguyên <c>anchoredPosition</c> / <c>localScale</c> mà vẫn đứng
+        /// đúng chỗ list sẽ đặt nó dưới Content. Chỉ ghi transform khi giá trị đổi.
+        /// </summary>
+        private void MirrorContentOnto(RectTransform layer)
+        {
+            var center = new Vector2(0.5f, 0.5f);
+            if (layer.anchorMin != center) layer.anchorMin = center;
+            if (layer.anchorMax != center) layer.anchorMax = center;
+            if (layer.pivot != content.pivot) layer.pivot = content.pivot;
+            Vector2 size = content.rect.size;
+            if (layer.sizeDelta != size) layer.sizeDelta = size;
+
+            Transform parent = layer.parent;
+            Vector3 parentScale = parent != null ? parent.lossyScale : Vector3.one;
+            Vector3 contentScale = content.lossyScale;
+            var scale = new Vector3(ScaleRatio(contentScale.x, parentScale.x), ScaleRatio(contentScale.y, parentScale.y), 1f);
+            if (layer.localScale != scale) layer.localScale = scale;
+            if (layer.rotation != content.rotation) layer.rotation = content.rotation;
+            if (layer.position != content.position) layer.position = content.position;
+        }
+
+        /// <summary>Tỉ lệ cần cho lớp nổi; cha đang có tỉ lệ 0 (popup chưa nở) thì giữ 1 thay vì chia cho 0.</summary>
+        private static float ScaleRatio(float target, float parent)
+        {
+            return Mathf.Abs(parent) < 0.000001f ? 1f : target / parent;
+        }
+
+        private static void PlaceUnderParent(LeaderboardEntryView view, Transform parent)
+        {
+            if (view.transform.parent != parent) view.transform.SetParent(parent, false);
+        }
+
         private void OrderLocalRowOnTop()
         {
             if (sunburst && sunburst.IsPlaying) sunburst.transform.SetAsLastSibling();
@@ -742,6 +908,9 @@ namespace DreamTech.Leaderboard.UI
         {
             view.Unbind();
             view.gameObject.SetActive(false);
+            // View đang ở lớp nổi (row mình trong cú tiếp cận bục) về lại Content trước khi vào pool — pool chỉ giữ view của
+            // Content, và lần dùng sau có thể là một row thường.
+            PlaceUnderParent(view, content);
             _pool.Push(view);
         }
 

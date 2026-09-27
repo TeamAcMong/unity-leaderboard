@@ -65,7 +65,9 @@ namespace DreamTech.Leaderboard.ViewModel
     /// <list type="bullet">
     /// <item>RankUp: Intro → Lift → (Spin nếu nhảy lớn) → Climb → Land.</item>
     /// <item>RankUp đáp vào phần host trình bày (<c>MotionSettings.HostPresentedTopRanks</c>): Intro → Lift → (Spin) →
-    /// (Climb tới ranh giới, nếu bắt đầu dưới ranh giới) → PodiumHold (nhịp PodiumTakeover, chờ host) → PodiumClimb → Land.</item>
+    /// (Climb tới ranh giới, nếu bắt đầu dưới ranh giới) → PodiumHold (nhịp PodiumTakeover, chờ host) → PodiumClimb → Land.
+    /// Có <c>PodiumApproachScrollSpeed</c> thì Climb là cú tiếp cận kiểu cuộn và LUÔN có (kể cả bắt đầu ở ranh giới); có
+    /// <c>DeferPodiumApproachPasses</c> thì người bị vượt trong đoạn đó đứng yên tới tick host thả cổng.</item>
     /// <item>NewEntry: Intro → Pop (pill NEW).</item>
     /// <item>ScoreImproved: Intro → CountScore (pill BEST) → Bob.</item>
     /// <item>Unchanged / RankDown: Intro → Bob (nhún nhẹ để mắt tìm thấy row mình).</item>
@@ -119,6 +121,12 @@ namespace DreamTech.Leaderboard.ViewModel
 
         /// <summary>Slot row mình lúc bắt đầu pha PodiumClimb (chỗ nó đứng chờ).</summary>
         private float _podiumClimbFromSlot;
+
+        /// <summary>
+        /// Đoạn trong list của màn lên bục này là cú TIẾP CẬN kiểu cuộn (<c>MotionSettings.PodiumApproachScrollSpeed</c> &gt; 0,
+        /// bắt đầu ở một ô ≥ ranh giới). Chốt một lần ở <see cref="Prepare"/> và ghi sang model (<c>HasPodiumApproach</c>) cho list.
+        /// </summary>
+        private bool _hasPodiumApproach;
 
         /// <summary>Host đã cho phép đi tiếp chưa (chỉ có nghĩa khi <c>WaitForHostRelease</c> bật).</summary>
         private bool _hostReleased;
@@ -198,6 +206,23 @@ namespace DreamTech.Leaderboard.ViewModel
         /// <summary>Số nhịp tick đã phát trong cú leo hiện tại (<c>MotionSettings.ClimbTickInterval</c>).</summary>
         private int _climbTicksEmitted;
 
+        /// <summary>
+        /// <see cref="MotionSettings.CoroutineFrameTiming"/>: pha hiện tại đã vẽ mẫu cuối ở tick trước, tick này mới trao cho pha kế.
+        /// </summary>
+        private bool _completesOnNextTick;
+
+        /// <summary><see cref="MotionSettings.CoroutineFrameTiming"/>: pha hiện tại chưa được tính khung nào.</summary>
+        private bool _isPhaseFresh;
+
+        /// <summary>
+        /// <see cref="MotionSettings.CoroutineFrameTiming"/>: độ dài khung đầu của pha hiện tại — đồng hồ tick đếm từ KHUNG đầu (không
+        /// gồm độ dài của nó), còn mẫu vẽ thì gồm.
+        /// </summary>
+        private float _phaseFirstFrameDelta;
+
+        /// <summary><see cref="MotionSettings.CoroutineFrameTiming"/>: đồng hồ tick (xem trên) lúc tick gần nhất nổ.</summary>
+        private float _lastClimbTickClock;
+
         public RevealTimeline(BoardModel model, IRevealListener listener)
         {
             _model = model ?? throw new ArgumentNullException(nameof(model));
@@ -247,6 +272,14 @@ namespace DreamTech.Leaderboard.ViewModel
                         // Ranh giới là ô Hidden; đoạn trong list chỉ vượt những người đang đứng ở ô ≥ ranh giới. Bắt đầu ở
                         // ngay ranh giới (4 → 3) hoặc đã trên bục (3 → 2) thì đoạn này rỗng: nhấc lên xong là tới cổng.
                         _listPassCount = Math.Max(0, _plan.LocalIndex + _plan.AnimatedCount - _hiddenLeadingSlots);
+
+                        // Cú tiếp cận kiểu cuộn chỉ có khi row mình bắt đầu TRONG list (kể cả đúng ô ranh giới). Đổi chỗ trên bục
+                        // (3 → 2) không có đoạn list nào để cuộn: host diễn cú đó từ ngay nhịp Lift.
+                        if (_settings.PodiumApproachScrollSpeed > 0f && _plan.StartSlot >= _hiddenLeadingSlots)
+                        {
+                            _hasPodiumApproach = true;
+                            _model.BeginPodiumApproach();
+                        }
                     }
                     break;
                 case RankChangeKind.NewEntry:
@@ -286,6 +319,11 @@ namespace DreamTech.Leaderboard.ViewModel
             }
 
             AdvanceScoreCount(deltaTime);
+            if (_settings.CoroutineFrameTiming)
+            {
+                TickWithCoroutineFrameTiming(deltaTime);
+                return;
+            }
             _phaseElapsed += deltaTime;
 
             // Frame dài có thể đi qua nhiều pha; phần thời gian dư được chuyển sang pha kế.
@@ -305,6 +343,49 @@ namespace DreamTech.Leaderboard.ViewModel
                 CompletePhase();
                 if (_phase == RevealPhase.Finished) return;
                 _phaseElapsed = overflow;
+            }
+        }
+
+        /// <summary>
+        /// Tick theo nhịp khung của coroutine (<see cref="MotionSettings.CoroutineFrameTiming"/>). Mỗi pha như một vòng
+        /// <c>elapsed += dt; vẽ; yield</c>: khung đầu của pha đã được tính độ dài của chính nó; hết giờ thì vẽ mẫu cuối và CHỈ
+        /// trao cho pha kế ở tick sau (vòng của họ kiểm tra điều kiện sau <c>yield</c>). Pha dài 0 giây và nhịp chờ host đã được
+        /// thả thì trao ngay trong tick — pha kế nhận lại trọn độ dài khung này, như một coroutine được gọi thẳng từ callback.
+        /// </summary>
+        private void TickWithCoroutineFrameTiming(float deltaTime)
+        {
+            bool isFrameCredited = false;
+            for (int guard = 0; guard < MaximumPhasesPerTick; guard++)
+            {
+                if (_completesOnNextTick)
+                {
+                    _completesOnNextTick = false;
+                    CompletePhase();
+                    if (_phase == RevealPhase.Finished) return;
+                }
+                if (!isFrameCredited)
+                {
+                    if (_isPhaseFresh)
+                    {
+                        _isPhaseFresh = false;
+                        _phaseFirstFrameDelta = deltaTime;
+                    }
+                    _phaseElapsed += deltaTime;
+                    isFrameCredited = true;
+                }
+
+                bool handsOverNow = _phaseDuration <= 0f || IsWaitingOnReleasedGate;
+                float progress = handsOverNow ? 1f : Easing.Clamp01(_phaseElapsed / _phaseDuration);
+                UpdatePhase(progress);
+                if (progress < 1f) return;
+                if (!handsOverNow)
+                {
+                    _completesOnNextTick = true;
+                    return;
+                }
+                CompletePhase();
+                if (_phase == RevealPhase.Finished) return;
+                isFrameCredited = false;
             }
         }
 
@@ -330,6 +411,10 @@ namespace DreamTech.Leaderboard.ViewModel
             _phase = phase;
             _phaseElapsed = 0f;
             _phaseDuration = Math.Max(0f, duration);
+            _completesOnNextTick = false;
+            _isPhaseFresh = true;
+            _phaseFirstFrameDelta = 0f;
+            _lastClimbTickClock = 0f;
         }
 
         private void UpdatePhase(float progress)
@@ -361,8 +446,11 @@ namespace DreamTech.Leaderboard.ViewModel
                 }
                 case RevealPhase.Climb:
                 {
-                    float slot = Easing.LerpUnclamped(_plan.StartSlot, _plan.StartSlot - _listPassCount, ClimbEased(progress));
+                    float eased = ClimbEased(progress);
+                    float slot = Easing.LerpUnclamped(_plan.StartSlot, ListClimbEndSlot, eased);
                     _local.Slot = slot;
+                    // Camera của cú tiếp cận đọc CHÍNH tiến độ này (cùng tick, cùng đường cong) — xem MotionSettings.PodiumApproachScrollSpeed.
+                    if (_hasPodiumApproach) _model.SetPodiumApproachProgress(eased);
                     while (_crossedCount < _listPassCount &&
                            RankUpPlanner.ShouldCross(slot, _plan.StartSlot, _crossedCount, _settings.MakeRoomAt))
                     {
@@ -459,6 +547,7 @@ namespace DreamTech.Leaderboard.ViewModel
                     if (TakesPodium)
                     {
                         CrossUpTo(_listPassCount, true);
+                        EndPodiumApproach();
                         BeginPodiumHold();
                         break;
                     }
@@ -493,7 +582,7 @@ namespace DreamTech.Leaderboard.ViewModel
                     break;
                 case RevealPhase.CountScore:
                     CompleteScoreCount();
-                    EnterPhase(RevealPhase.Bob, BobPhaseDuration);
+                    EnterPhase(RevealPhase.Bob, SkipsHostPresentedPulse ? 0f : BobPhaseDuration);
                     break;
                 case RevealPhase.Bob:
                     Finish();
@@ -600,7 +689,7 @@ namespace DreamTech.Leaderboard.ViewModel
                     break;
                 case RankChangeKind.ScoreImproved:
                     HasReachedLanding = true;
-                    _local.StartPill(PillContent.Best, 0, _tier, _model.Clock, _settings);
+                    if (_settings.ScoreImprovedPill) _local.StartPill(PillContent.Best, 0, _tier, _model.Clock, _settings);
                     Emit(LeaderboardBeat.ScoreImproved, 0f);
                     StartScoreCount(Change.FromScore, Change.ToScore);
                     // Host tự đếm (và đã đếm xong trong lúc giữ cổng) ⇒ không còn gì để chờ ở pha đếm.
@@ -610,9 +699,13 @@ namespace DreamTech.Leaderboard.ViewModel
                 default:
                     HasReachedLanding = true;
                     // Nhịp nhẹ (QuietPulseInsteadOfBob) chỉ dành cho lượt CÓ điểm mà không đổi hạng; lượt 0 điểm (Unchanged) thì
-                    // bảng đứng yên — "chốt trạng thái cuối, hiện Continue ngay".
+                    // bảng đứng yên — "chốt trạng thái cuối, hiện Continue ngay". Row mình đang trên bục (host trình bày) thì
+                    // cú nhún không ai thấy — HostPresentedRowSkipsQuietPulse bỏ luôn.
                     EnterPhase(RevealPhase.Bob,
-                               _settings.QuietPulseInsteadOfBob && Change.Kind == RankChangeKind.Unchanged ? 0f : BobPhaseDuration);
+                               SkipsHostPresentedPulse ||
+                               (_settings.QuietPulseInsteadOfBob && Change.Kind == RankChangeKind.Unchanged)
+                                   ? 0f
+                                   : BobPhaseDuration);
                     break;
             }
         }
@@ -692,9 +785,41 @@ namespace DreamTech.Leaderboard.ViewModel
             float interval = _settings.ClimbTickInterval;
             float window = Math.Max(interval, _phaseDuration - interval);
             int total = (int)Math.Ceiling(window / interval - 0.0001f);
+            if (_settings.CoroutineFrameTiming)
+            {
+                EmitClimbTickRearmed(interval, total);
+                return;
+            }
             int due = Math.Min(total, (int)Math.Floor(_phaseElapsed / interval + 0.0001f) + 1);
             if (due <= _climbTicksEmitted) return;
             _climbTicksEmitted = due;
+            Emit(LeaderboardBeat.Pass, _phaseDuration <= 0f ? 1f : Easing.Clamp01(_phaseElapsed / _phaseDuration));
+        }
+
+        /// <summary>
+        /// Nhịp tick khi <see cref="MotionSettings.CoroutineFrameTiming"/> bật: tick đầu ở khung đầu của pha, mỗi tick sau ở khung
+        /// đầu tiên cách khung của tick trước ≥ <paramref name="interval"/> — đồng hồ hẹn lại từ khung nó nổ, nên ở tốc độ khung
+        /// đều mỗi khoảng làm tròn LÊN số khung (0,18 s ở 60 Hz = 11 khung) thay vì dồn đều theo giây. Đồng hồ đếm từ khung đầu
+        /// của pha, không gồm độ dài khung ấy. Tổng số tick không đổi.
+        /// </summary>
+        private void EmitClimbTickRearmed(float interval, int total)
+        {
+            if (_climbTicksEmitted >= total) return;
+            float clock = _phaseElapsed - _phaseFirstFrameDelta;
+            if (_settings.ClimbTickFrameRate > 0f)
+            {
+                // Lưới khung (MotionSettings.ClimbTickFrameRate): tick thứ k ở mốc k × khoảng-làm-tròn-lên-khung, nổ ở khung gần nhất.
+                float frame = 1f / _settings.ClimbTickFrameRate;
+                float gridInterval = (float)Math.Ceiling(interval * _settings.ClimbTickFrameRate - 0.0001f) * frame;
+                if (clock < _climbTicksEmitted * gridInterval - frame * 0.5f) return;
+                _climbTicksEmitted++;
+                _lastClimbTickClock = clock;
+                Emit(LeaderboardBeat.Pass, _phaseDuration <= 0f ? 1f : Easing.Clamp01(_phaseElapsed / _phaseDuration));
+                return;
+            }
+            if (_climbTicksEmitted > 0 && clock - _lastClimbTickClock < interval - 0.0001f) return;
+            _climbTicksEmitted++;
+            _lastClimbTickClock = clock;
             Emit(LeaderboardBeat.Pass, _phaseDuration <= 0f ? 1f : Easing.Clamp01(_phaseElapsed / _phaseDuration));
         }
 
@@ -702,6 +827,14 @@ namespace DreamTech.Leaderboard.ViewModel
         private float BobPhaseDuration => _settings.QuietPulseInsteadOfBob
             ? Math.Max(0f, _settings.LiftDuration) + Math.Max(0f, _settings.LandDuration)
             : _settings.BobDuration;
+
+        /// <summary>
+        /// Pha Bob dài 0 giây vì row mình đang do host trình bày (<c>MotionSettings.HostPresentedRowSkipsQuietPulse</c>): nó nằm
+        /// sau bục, cú nhún không ai thấy — hiệu ứng của host trên bục mới là thứ quyết định lúc màn diễn xong. Cờ tắt thì không
+        /// đọc độ hiện diện, quỹ đạo y như cũ.
+        /// </summary>
+        private bool SkipsHostPresentedPulse =>
+            _settings.HostPresentedRowSkipsQuietPulse && _model.ListPresence(_local) <= 0f;
 
         /// <summary>Cỡ của nhịp nhẹ tại giây <paramref name="elapsed"/>: nhấc theo LiftCurve rồi đáp theo LandCurve.</summary>
         private float QuietPulseScale(float elapsed)
@@ -720,13 +853,51 @@ namespace DreamTech.Leaderboard.ViewModel
 
         /// <summary>
         /// Sau Lift / Spin: leo trong list nếu còn người để vượt trước ranh giới; không còn thì tới cổng bục (khi lên bục) hoặc
-        /// đáp luôn. Cờ tắt thì <c>_listPassCount == AnimatedCount</c> và <c>TakesPodium == false</c> — đúng rẽ nhánh cũ.
+        /// đáp luôn. Cờ tắt thì <c>_listPassCount == AnimatedCount</c> và <c>TakesPodium == false</c> — đúng rẽ nhánh cũ. Có cú
+        /// tiếp cận kiểu cuộn thì luôn đi qua nó, kể cả khi không còn ai để vượt (bắt đầu ở ô ranh giới: camera vẫn phải cuộn về
+        /// đỉnh list trong đúng thời lượng của quãng cuộn).
         /// </summary>
         private void BeginClimbOrHold()
         {
-            if (_listPassCount > 0) BeginClimb();
+            if (_hasPodiumApproach) BeginPodiumApproach();
+            else if (_listPassCount > 0) BeginClimb();
             else if (TakesPodium) BeginPodiumHold();
             else BeginLand();
+        }
+
+        /// <summary>
+        /// Cú tiếp cận bục kiểu cuộn (<c>MotionSettings.PodiumApproachScrollSpeed</c>): chính là pha Climb (cùng đường cong, cùng
+        /// luật vượt, cùng nhịp tick theo đồng hồ) nhưng dài đúng quãng cuộn / tốc độ, không kẹp.
+        /// </summary>
+        private void BeginPodiumApproach()
+        {
+            _climbTicksEmitted = 0;
+            EnterPhase(RevealPhase.Climb, PodiumApproachDuration);
+        }
+
+        /// <summary>
+        /// Thời lượng cú tiếp cận = quãng cuộn từ chỗ canh giữa ô xuất phát về đỉnh list (<c>BoardModel.PodiumApproachStartScroll</c>)
+        /// chia cho tốc độ — tuyến tính, KHÔNG kẹp (nhảy xa thì cuộn lâu, đúng như quãng đường). Không list nào báo quãng cuộn
+        /// (model tự lái bằng tay) thì rơi về công thức leo thường theo số người vượt.
+        /// </summary>
+        private float PodiumApproachDuration
+        {
+            get
+            {
+                float startScroll = _model.PodiumApproachStartScroll;
+                if (float.IsNaN(startScroll)) return RankUpPlanner.ClimbDuration(_listPassCount, _settings);
+                // Dừng hụt (MotionSettings.PodiumApproachShortfallRows): chỉ quãng thật sự cuộn mới tính thời lượng.
+                return (startScroll - _model.PodiumApproachEndScroll) / _settings.PodiumApproachScrollSpeed;
+            }
+        }
+
+        /// <summary>
+        /// Cú tiếp cận đã xong (tới ranh giới, bị bỏ qua hay đóng giữa chừng): camera ở nhà — tiến độ chốt 1. Không có cú tiếp
+        /// cận thì không đụng vào model.
+        /// </summary>
+        private void EndPodiumApproach()
+        {
+            if (_hasPodiumApproach) _model.SetPodiumApproachProgress(1f);
         }
 
         /// <summary>
@@ -735,15 +906,33 @@ namespace DreamTech.Leaderboard.ViewModel
         /// </summary>
         private void BeginPodiumHold()
         {
-            _local.Slot = _plan.StartSlot - _listPassCount;
+            _local.Slot = ListClimbEndSlot;
             Emit(LeaderboardBeat.PodiumTakeover, 0f);
             EnterPhase(RevealPhase.PodiumHold, 0f);
         }
 
         private void BeginPodiumClimb()
         {
+            ReleaseDeferredApproachPasses();
             _podiumClimbFromSlot = _local.Slot;
             EnterPhase(RevealPhase.PodiumClimb, _settings.PodiumClimbDuration);
+        }
+
+        /// <summary>
+        /// Host vừa thả cổng bục: những người bị vượt ở đoạn trong list mà còn đứng yên (<c>DeferPodiumApproachPasses</c>) xuống
+        /// một ô NGAY tick này (<c>PodiumPassSlideDuration</c> = 0 thì đặt thẳng) và mang số hạng thật, không cuộn số, không nhịp
+        /// Pass — cùng tick row mình tới đích và người trên bục đứng vào ô mới, nên bảng về trạng thái cuối trong một frame.
+        /// </summary>
+        private void ReleaseDeferredApproachPasses()
+        {
+            if (!TakesPodium || _deferredPasses.Count == 0) return;
+            for (int index = 0; index < _deferredPasses.Count; index++)
+            {
+                RowState row = _deferredPasses[index];
+                SlidePastPodiumRow(row);
+                row.SetDisplayRankImmediate(row.Entry.Rank);
+            }
+            _deferredPasses.Clear();
         }
 
         /// <summary>
@@ -786,10 +975,13 @@ namespace DreamTech.Leaderboard.ViewModel
         {
             HasReachedLanding = true;
             Emit(LeaderboardBeat.NewEntry, 0f);
-            _local.StartPill(PillContent.New, 0, _tier, _model.Clock, _settings);
-            _local.StartShine(_model.Clock, _settings);
-            _local.FlashNow(_settings.LandFlashAlpha, _settings.FlashDuration, _settings.FlashRiseDuration,
-                            _settings.FlashDecayPower);
+            if (_settings.NewEntryAccent)
+            {
+                _local.StartPill(PillContent.New, 0, _tier, _model.Clock, _settings);
+                _local.StartShine(_model.Clock, _settings);
+                _local.FlashNow(_settings.LandFlashAlpha, _settings.FlashDuration, _settings.FlashRiseDuration,
+                                _settings.FlashDecayPower);
+            }
             _listener.OnLanded(_tier, _local);
             StartScoreCount(0, Change.ToScore);
             EnterPhase(RevealPhase.Pop, _settings.NewEntryPopDuration);
@@ -822,6 +1014,7 @@ namespace DreamTech.Leaderboard.ViewModel
                 AppendTail(emitTailBeat);
             }
             if (_local.DisplayRank != Change.ToRank) _local.SetDisplayRankImmediate(Change.ToRank);
+            EndPodiumApproach();
             _local.EndRankUpStream(_model.Clock);
             _local.Scale = 1f;
             _local.Lift = 0f;
@@ -861,6 +1054,7 @@ namespace DreamTech.Leaderboard.ViewModel
                     SettleDeferredPasses();
                     _model.FinishAllTweens();
                     _local.SetDisplayRankImmediate(Change.ToRank);
+                    EndPodiumApproach();
                     _listener.OnCameraSnapRequested();
                     BeginLand();
                     break;
@@ -882,9 +1076,10 @@ namespace DreamTech.Leaderboard.ViewModel
         private void CrossNext(bool animate)
         {
             RowState passedRow = _plan.Passed[_crossedCount];
-            if (IsDeferringPasses)
+            if (IsDeferringPass(_crossedCount))
             {
-                // Đứng yên, giữ số hạng cũ: dời một lần lúc đáp (StartDeferredPassSlides), đổi số lúc chốt (SettleDeferredPasses).
+                // Đứng yên, giữ số hạng cũ: dời một lần lúc đáp (StartDeferredPassSlides), đổi số lúc chốt (SettleDeferredPasses);
+                // màn lên bục thì dời + đổi số cùng lúc ở tick host thả cổng (ReleaseDeferredApproachPasses).
                 _deferredPasses.Add(passedRow);
             }
             else
@@ -912,10 +1107,21 @@ namespace DreamTech.Leaderboard.ViewModel
         }
 
         /// <summary>
-        /// Người bị vượt đứng yên chờ cú đáp. Chỉ áp cho màn leo không lên bục: cú lên bục do host diễn và host đặt người bị
-        /// hất xuống bằng proxy của nó (xem <c>PodiumPassSlideDuration</c>).
+        /// Người bị vượt thứ <paramref name="passIndex"/> có đứng yên chờ không.
+        /// <list type="bullet">
+        /// <item>Màn leo không lên bục: <c>DeferPassSlidesToLand</c> — chờ tới cú đáp.</item>
+        /// <item>Màn lên bục: <c>DeferPodiumApproachPasses</c>, và chỉ những người bị vượt ở đoạn TRONG LIST (chỉ số &lt;
+        /// số người vượt trong list) — chờ tới tick host thả cổng. Người trên bục bị vượt sau cổng luôn đi theo
+        /// <c>PodiumPassSlideDuration</c> như cũ.</item>
+        /// </list>
+        /// Cả hai cờ tắt thì y như cũ: màn leo thường theo <c>DeferPassSlidesToLand</c>, màn lên bục không bao giờ chờ.
         /// </summary>
-        private bool IsDeferringPasses => _settings.DeferPassSlidesToLand && !TakesPodium;
+        private bool IsDeferringPass(int passIndex)
+        {
+            return TakesPodium
+                ? _settings.DeferPodiumApproachPasses && passIndex < _listPassCount
+                : _settings.DeferPassSlidesToLand;
+        }
 
         /// <summary>Lúc đáp: mọi người bị vượt cùng dời xuống một ô, tuyến tính, trong <c>LandPassSlideDuration</c>.</summary>
         private void StartDeferredPassSlides()
@@ -968,9 +1174,21 @@ namespace DreamTech.Leaderboard.ViewModel
         /// <summary>Như <see cref="CrossRemaining"/> nhưng chỉ tới người thứ <paramref name="count"/> (đoạn leo trong list khi lên bục).</summary>
         private void CrossUpTo(int count, bool animate)
         {
-            _local.Slot = _plan.StartSlot - count;
+            _local.Slot = _plan.StartSlot - count + ApproachStopOffset;
             while (_crossedCount < count) CrossNext(animate);
         }
+
+        /// <summary>
+        /// Chỗ dừng lệch khỏi ô ranh giới của cú tiếp cận (<c>MotionSettings.PodiumApproachStopOffsetRows</c>, cộng quãng hụt
+        /// <c>PodiumApproachShortfallRows</c> khi list báo cú tiếp cận dừng hụt — camera dừng thấp hơn đỉnh đúng quãng đó nên row
+        /// phải dời theo để trên màn vẫn dừng đúng chỗ); 0 khi màn này không có cú tiếp cận kiểu cuộn — mọi đường khác y như cũ.
+        /// </summary>
+        private float ApproachStopOffset => _hasPodiumApproach
+            ? _settings.PodiumApproachStopOffsetRows + (_model.PodiumApproachStopsShort ? _settings.PodiumApproachShortfallRows : 0f)
+            : 0f;
+
+        /// <summary>Slot của row mình ở cuối đoạn leo trong list: ô cuối (hay ô ranh giới khi lên bục) + chỗ dừng lệch của cú tiếp cận.</summary>
+        private float ListClimbEndSlot => _plan.StartSlot - _listPassCount + ApproachStopOffset;
 
         private void AppendTail(bool notifyListener)
         {

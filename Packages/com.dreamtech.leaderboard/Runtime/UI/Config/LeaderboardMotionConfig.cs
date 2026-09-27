@@ -77,6 +77,11 @@ namespace DreamTech.Leaderboard.UI
         public float LoadingDotsPerSecond = 3f;
         [Tooltip("Chờ host (popup) diễn xong animation mở tối đa bao lâu trước khi bắt đầu intro.")]
         public float HostReadyTimeout = 1.5f;
+        [Tooltip("Dựng list NGAY khi dữ liệu về, trước khi host sẵn sàng: model, row của người chơi (ô TRƯỚC màn diễn) sát mép " +
+                 "trên khung nhìn — đỉnh list khi row đó nằm trong phần host trình bày — và mọi row ở tư thế đầu của đợt trượt " +
+                 "(chưa hiện). Host sẵn sàng thì list canh lại và đợt trượt bắt đầu như cũ. Widget bắn ListStaged để host đổ " +
+                 "phần nó tự vẽ (bục...) từ khung đầu. Tắt (mặc định) = nội dung trống tới lúc host sẵn sàng, như cũ.")]
+        public bool StageListBeforeHostReady;
     }
 
     /// <summary>

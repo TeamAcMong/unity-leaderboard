@@ -206,6 +206,32 @@ namespace DreamTech.Leaderboard.UI.Tests
             Assert.AreEqual(TextOverflowModes.Ellipsis, view.NameText.overflowMode);
             StringAssert.Contains("<size=500>", view.NameText.text);
         }
+
+        /// <summary>Config mặc định giữ đúng cách viết điểm của mọi bản trước: có dấu phân cách hàng nghìn.</summary>
+        [Test]
+        public void Score_DefaultFormat_KeepsThousandsSeparator()
+        {
+            LeaderboardEntryView view = _canvas.Spawn(_rowPrefab);
+
+            RenderAt(view, CreateRow("me", "You", 3), 0.0);
+
+            Assert.AreEqual(LeaderboardTextConfig.DefaultScoreFormat, _text.ScoreFormat);
+            Assert.AreEqual("1,234", view.ScoreText.text);
+        }
+
+        /// <summary><c>scoreFormat</c> = "0": số trơn, không dấu phân cách.</summary>
+        [Test]
+        public void Score_PlainFormat_WritesThePlainInteger()
+        {
+            var serialized = new SerializedObject(_text);
+            serialized.FindProperty("scoreFormat").stringValue = "0";
+            serialized.ApplyModifiedPropertiesWithoutUndo();
+            LeaderboardEntryView view = _canvas.Spawn(_rowPrefab);
+
+            RenderAt(view, CreateRow("me", "You", 3), 0.0);
+
+            Assert.AreEqual("1234", view.ScoreText.text);
+        }
     }
 
     [TestFixture]
@@ -479,6 +505,49 @@ namespace DreamTech.Leaderboard.UI.Tests
             Assert.IsTrue(task.IsCompleted);
             Assert.IsNull(_widget.CurrentTimeline);
             Assert.Greater(_widget.ScrollView.ActiveViewCount, 0);
+        }
+
+        /// <summary>Request mặc định (và constructor ba tham số) vẫn cho các row trượt vào như cũ.</summary>
+        [Test]
+        public void DefaultRequest_PlaysTheRowIntro()
+        {
+            PrepareRankUp(120, 108);
+
+            Task<LeaderboardPresentResult> task = Present(BoardPresentMode.RevealIfPending);
+
+            Assert.IsFalse(default(LeaderboardPresentRequest).SkipIntro, "Giá trị mặc định của struct phải là hành vi cũ.");
+            Assert.IsTrue(_widget.CurrentModel.HasStartedIntro, "Request mặc định phải chạy đợt trượt vào.");
+            Assert.Greater(_widget.CurrentModel.IntroSettleSeconds, 0f);
+            RunToCompletion(task);
+        }
+
+        /// <summary>
+        /// <c>SkipIntro</c>: bảng dựng thẳng ở tư thế đứng — không row nào đang trượt — mà màn diễn vẫn chạy trọn và ghi nhận
+        /// đã xem như thường.
+        /// </summary>
+        [Test]
+        public void SkipIntroRequest_BuildsRowsInPlace_AndStillReveals()
+        {
+            PrepareRankUp(120, 108);
+
+            _widget.Arm();
+            Task<LeaderboardPresentResult> task = _widget.PresentAsync(
+                new LeaderboardPresentRequest(_board, BoardPresentMode.RevealIfPending, null, skipIntro: true),
+                CancellationToken.None);
+
+            BoardModel model = _widget.CurrentModel;
+            Assert.IsNotNull(model);
+            Assert.IsFalse(model.HasStartedIntro, "SkipIntro mà list vẫn chạy đợt trượt vào.");
+            Assert.AreEqual(0f, model.IntroSettleSeconds);
+            foreach (RowState row in model.Rows)
+            {
+                Assert.IsFalse(row.IsIntroPlaying, "Row " + row.DisplayRank + " vẫn đang trượt vào.");
+            }
+
+            LeaderboardPresentResult result = RunToCompletion(task);
+            Assert.AreEqual(PresentOutcome.Completed, result.Outcome);
+            Assert.AreEqual(RankChangeKind.RankUp, result.Change.Kind);
+            Assert.IsFalse(_board.HasUnrevealedChange);
         }
     }
 }

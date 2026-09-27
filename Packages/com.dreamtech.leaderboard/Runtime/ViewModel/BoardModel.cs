@@ -132,6 +132,76 @@ namespace DreamTech.Leaderboard.ViewModel
         /// </summary>
         public float IntroSettleSeconds { get; private set; }
 
+        /// <summary>
+        /// Model này có chạy đợt trượt vào không (<see cref="StartIntro(float, int)"/> đã được gọi). False khi list dựng
+        /// thẳng ở tư thế đứng — <c>LeaderboardPresentRequest.SkipIntro</c>, hoặc host tự dựng model. Host dùng để không chờ
+        /// một đợt trượt không bao giờ tới (khi đó <see cref="IntroSettleSeconds"/> = 0 không phân biệt được với "chưa có").
+        /// </summary>
+        public bool HasStartedIntro { get; private set; }
+
+        // ---------------------------------------------------------------- Cú tiếp cận bục kiểu cuộn (MotionSettings.PodiumApproachScrollSpeed)
+
+        /// <summary>
+        /// Màn diễn của model này có cú TIẾP CẬN bục kiểu cuộn (<see cref="MotionSettings.PodiumApproachScrollSpeed"/> &gt; 0, lên
+        /// bục từ một ô trong list). Timeline đánh dấu ở <c>RevealTimeline.Prepare</c> — TRƯỚC khi list dựng view lần đầu — để list
+        /// kịp canh giữa ô xuất phát, lái camera theo <see cref="PodiumApproachProgress"/> và (nếu có lớp nổi) vẽ row mình ngoài
+        /// mask. False khi cờ tắt: mọi đường của list y như cũ.
+        /// </summary>
+        public bool HasPodiumApproach { get; private set; }
+
+        /// <summary>
+        /// Chỗ cuộn (đơn vị canvas) lúc mở màn của cú tiếp cận — list ghi lúc dựng (<see cref="SetPodiumApproachStartScroll"/>),
+        /// đã kẹp trong khoảng cuộn được. Cú tiếp cận cuộn từ đây về 0 (đỉnh list), nên đây cũng chính là QUÃNG cuộn. NaN = chưa
+        /// có list nào báo.
+        /// </summary>
+        public float PodiumApproachStartScroll { get; private set; } = float.NaN;
+
+        /// <summary>
+        /// Chỗ cuộn CUỐI của cú tiếp cận (đơn vị canvas): 0 = đỉnh list (mặc định); &gt; 0 khi list báo cú tiếp cận dừng hụt
+        /// (<see cref="MotionSettings.PodiumApproachShortfallRows"/>). Luôn trong [0, <see cref="PodiumApproachStartScroll"/>].
+        /// </summary>
+        public float PodiumApproachEndScroll { get; private set; }
+
+        /// <summary>Cú tiếp cận của lượt này dừng hụt (<see cref="PodiumApproachEndScroll"/> &gt; 0) — timeline dời chỗ dừng của row theo.</summary>
+        public bool PodiumApproachStopsShort => PodiumApproachEndScroll > 0f;
+
+        /// <summary>
+        /// Tiến độ ĐÃ EASE (0..1) của cú tiếp cận — đúng giá trị timeline vừa dùng để đặt <c>Slot</c> của row mình ở tick này.
+        /// List lái camera bằng chính con số này (cuộn = lerp(<see cref="PodiumApproachStartScroll"/>, 0, tiến độ)), nên camera
+        /// và row không bao giờ lệch nhau một frame. 0 trước cú tiếp cận, 1 từ lúc tới ranh giới (kể cả bỏ qua / đóng giữa chừng).
+        /// </summary>
+        public float PodiumApproachProgress { get; private set; }
+
+        /// <summary>
+        /// List báo chỗ cuộn lúc mở màn của cú tiếp cận (xem <see cref="PodiumApproachStartScroll"/>). Âm = 0. Host tự lái model mà
+        /// không có list thì gọi hàm này trước khi màn diễn tới cú tiếp cận để có đúng thời lượng.
+        /// </summary>
+        public void SetPodiumApproachStartScroll(float scroll)
+        {
+            SetPodiumApproachScrollRange(scroll, 0f);
+        }
+
+        /// <summary>
+        /// List báo cả hai đầu của cú tiếp cận: chỗ cuộn lúc mở màn và chỗ cuộn cuối (0 = đỉnh list; &gt; 0 = dừng hụt, xem
+        /// <see cref="MotionSettings.PodiumApproachShortfallRows"/>). Âm = 0; chỗ cuối bị kẹp không vượt chỗ đầu.
+        /// </summary>
+        public void SetPodiumApproachScrollRange(float startScroll, float endScroll)
+        {
+            PodiumApproachStartScroll = Math.Max(0f, startScroll);
+            PodiumApproachEndScroll = Math.Min(PodiumApproachStartScroll, Math.Max(0f, endScroll));
+        }
+
+        internal void BeginPodiumApproach()
+        {
+            HasPodiumApproach = true;
+            PodiumApproachProgress = 0f;
+        }
+
+        internal void SetPodiumApproachProgress(float progress)
+        {
+            PodiumApproachProgress = progress;
+        }
+
         /// <summary>Các row nổi lên lần lượt tính từ ô trên cùng đang nhìn thấy.</summary>
         public void StartIntro(float topVisibleSlot)
         {
@@ -155,6 +225,7 @@ namespace DreamTech.Leaderboard.ViewModel
                 if (offset > -1f && offset < visibleRowCount) settle = Math.Max(settle, delay + Math.Max(0f, Settings.IntroDuration));
             }
             IntroSettleSeconds = settle;
+            HasStartedIntro = true;
         }
 
         /// <summary>Tách các row từ startIndex tới cuối (dùng khi quay số để hạng hiển thị không mâu thuẫn).</summary>

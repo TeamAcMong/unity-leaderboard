@@ -61,7 +61,23 @@ namespace DreamTech.Leaderboard.UI
         private IDisposable _revealLease;
         private float _debugTimeScale = 1f;
 
+        /// <summary>
+        /// Model dựng sẵn TRƯỚC khi host sẵn sàng (<see cref="LeaderboardVisualSettings.StageListBeforeHostReady"/>) cùng màn diễn đã
+        /// chuẩn bị (tua về trạng thái cũ) của nó — <see cref="BeginShow"/> của CÙNG lượt dùng lại chúng. Không nằm ở <c>_model</c>: widget
+        /// không tick model này, nên đợt trượt vào đứng ở tư thế đầu cho tới khi host sẵn sàng.
+        /// </summary>
+        private BoardModel _stagedModel;
+        private RevealTimeline _stagedTimeline;
+
         public event Action<LeaderboardPresentResult> PresentFinished;
+
+        /// <summary>
+        /// List vừa được dựng sẵn TRƯỚC khi host sẵn sàng (<see cref="LeaderboardVisualSettings.StageListBeforeHostReady"/>): model đã
+        /// nằm trên <see cref="ScrollView"/> (<c>ScrollView.Model</c>), row người chơi ở ô trước màn diễn. Host đổ phần nó tự vẽ (bục
+        /// của <c>MotionSettings.HostPresentedTopRanks</c>...) từ model này để khung đầu tiên đã đúng. Không bắn khi cờ tắt, khi host đã
+        /// sẵn sàng lúc dữ liệu về, hay khi lượt trình bày bỏ đợt trượt vào (<see cref="LeaderboardPresentRequest.SkipIntro"/>).
+        /// </summary>
+        public event Action ListStaged;
 
         public bool IsArmed => _isArmed;
         public bool IsPresenting => _presentCompletion != null;
@@ -109,6 +125,7 @@ namespace DreamTech.Leaderboard.UI
             SetSkipCatcherActive(false);
             _model = null;
             _timeline = null;
+            ClearStaged();
             _isArmed = true;
         }
 
@@ -204,6 +221,15 @@ namespace DreamTech.Leaderboard.UI
 
                 Task<BoardScene> loadTask = request.Board.LoadSceneAsync(request.Mode, cancellationToken);
                 Task hostReadyTask = WaitForHostReadyAsync(request.HostReady, _context.Visuals.HostReadyTimeout, cancellationToken);
+                if (_context.Visuals.StageListBeforeHostReady && !request.SkipIntro && !hostReadyTask.IsCompleted)
+                {
+                    // Dữ liệu về trước host (board đồng bộ thì ngay trong lượt gọi này — khung đầu đã có list): dựng sẵn list ở chỗ
+                    // cuộn mở màn, đợt trượt vào chưa chạy.
+                    BoardScene stagedScene = await loadTask;
+                    if (this == null || generation != _presentGeneration) return;
+                    cancellationToken.ThrowIfCancellationRequested();
+                    StageShow(stagedScene);
+                }
                 await Task.WhenAll(loadTask, hostReadyTask);
 
                 if (this == null || generation != _presentGeneration) return;
@@ -239,8 +265,53 @@ namespace DreamTech.Leaderboard.UI
             cancellationToken.ThrowIfCancellationRequested();
         }
 
+        /// <summary>
+        /// Dựng sẵn list trước khi host sẵn sàng (<see cref="LeaderboardVisualSettings.StageListBeforeHostReady"/>): model mới, màn diễn
+        /// chuẩn bị sẵn (row người chơi về ô cũ) khi cảnh cần diễn, list ở chỗ cuộn mở màn với mọi row ở tư thế đầu đợt trượt.
+        /// Không lấy lease "đang diễn" của board — việc đó vẫn ở <see cref="BeginShow"/>.
+        /// </summary>
+        private void StageShow(BoardScene scene)
+        {
+            if (!scrollView || scene.Rows.Count == 0) return;
+            if (statusView) statusView.HideAll();
+
+            var model = new BoardModel(scene, _motion);
+            RevealTimeline timeline = null;
+            if (scene.NeedsReveal)
+            {
+                timeline = new RevealTimeline(model, this);
+                timeline.Prepare();
+            }
+            _stagedModel = model;
+            _stagedTimeline = timeline;
+
+            scrollView.PinLocalRow = false;
+            scrollView.FollowLocalRow = false;
+            scrollView.SetUserScroll(false);
+            scrollView.StageModel(model);
+            try
+            {
+                ListStaged?.Invoke();
+            }
+            catch (Exception exception)
+            {
+                // Một host hỏng không được làm hỏng lượt trình bày (cùng luật với sink).
+                Debug.LogWarning("[Leaderboard] Host lỗi ở ListStaged: " + exception.Message, this);
+            }
+        }
+
+        private void ClearStaged()
+        {
+            _stagedModel = null;
+            _stagedTimeline = null;
+        }
+
         private void BeginShow(LeaderboardPresentRequest request, BoardScene scene)
         {
+            BoardModel stagedModel = _stagedModel != null && ReferenceEquals(_stagedModel.Scene, scene) ? _stagedModel : null;
+            RevealTimeline stagedTimeline = stagedModel != null ? _stagedTimeline : null;
+            ClearStaged();
+
             if (statusView) statusView.HideAll();
             if (scene.Rows.Count == 0)
             {
@@ -249,8 +320,11 @@ namespace DreamTech.Leaderboard.UI
                 return;
             }
 
-            _model = new BoardModel(scene, _motion);
+            _model = stagedModel ?? new BoardModel(scene, _motion);
             bool shouldReveal = scene.NeedsReveal && request.Board.TryBeginReveal(out _revealLease);
+            // Model dựng sẵn đã bị tua về trạng thái cũ cho một màn diễn giờ không diễn (board đang có lượt diễn khác giữ lease):
+            // dựng lại từ bảng cuối.
+            if (!shouldReveal && stagedTimeline != null) _model = new BoardModel(scene, _motion);
             if (!scrollView)
             {
                 CompletePresent(PresentOutcome.Completed, null);
@@ -259,12 +333,12 @@ namespace DreamTech.Leaderboard.UI
 
             if (shouldReveal)
             {
-                _timeline = new RevealTimeline(_model, this);
+                _timeline = stagedTimeline ?? new RevealTimeline(_model, this);
                 _timeline.Prepare();
                 scrollView.PinLocalRow = true;
                 scrollView.FollowLocalRow = true;
                 scrollView.SetUserScroll(false);
-                scrollView.SetModel(_model, true);
+                scrollView.SetModel(_model, !request.SkipIntro);
                 SetSkipCatcherActive(true);
                 _timeline.Start();
             }
@@ -274,7 +348,7 @@ namespace DreamTech.Leaderboard.UI
                 scrollView.PinLocalRow = false;
                 scrollView.FollowLocalRow = false;
                 scrollView.SetUserScroll(true);
-                scrollView.SetModel(_model, true);
+                scrollView.SetModel(_model, !request.SkipIntro);
                 CompletePresent(PresentOutcome.Completed, null);
             }
         }
@@ -352,6 +426,7 @@ namespace DreamTech.Leaderboard.UI
             // bằng RankChange CŨ. Lượt diễn thật tới sau đó không còn completion nào: skip catcher, bám camera, ghim row, chặn
             // cuộn tay và reveal lease kẹt tới Disarm; ReleasePodiumHold / ReleaseRevealHold lại chọc vào màn diễn cũ.
             _timeline = null;
+            ClearStaged();
             ReleaseRevealLease();
             if (scrollView)
             {

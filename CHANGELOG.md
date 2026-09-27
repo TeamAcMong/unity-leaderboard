@@ -3,6 +3,145 @@
 Mọi thay đổi đáng kể của package ghi ở đây. Định dạng theo [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 phiên bản theo [Semantic Versioning](https://semver.org/).
 
+## [0.6.0] - 2026-09-27
+
+Bản phát hành đầu tiên có các thay đổi của **0.5.0** — 0.5.0 chưa từng được tag, toàn bộ mục 0.5.0 bên dưới nằm trong 0.6.0.
+
+Nhóm mới: **cú lên bục theo một game tham chiếu** cho màn lên hạng ĐÁP vào phần host trình bày (`HostPresentedTopRanks`) — người
+bị vượt đứng yên tới lúc host đặt người chơi lên bục, cú tiếp cận ranh giới là một cú cuộn có tốc độ, row mình trôi ngoài mask
+của list, và không còn cú nhún vô hình khi người chơi đứng yên trên bục. Kèm các cờ chung: nhịp khung của coroutine cho mọi pha
+(và lưới khung cho tick của cú leo), đợt trượt vào theo cửa sổ view của list, list dựng sẵn trước khi host sẵn sàng, list mở ở
+đỉnh. Tất cả opt-in: các cờ mới để mặc định (false / 0 / 0 / 0 / false / false / 0 / false / false / false) và không gán lớp nổi
+thì quỹ đạo, nhịp và hình trùng khít 0.5.0 — chốt bằng các dấu vân tay cờ-tắt sẵn có
+(`RevealTimelineFlagOffTests`, `LeaderboardFlagOffRenderTests`, không ghi lại), và đối chiếu từng bit với bản timeline ngay trước
+khi thêm cờ trên 20 màn lên bục / trong list / bỏ qua giữa chừng. Không đổi chữ ký public nào đang có; chỉ thêm.
+
+### Added
+- `MotionSettings.DeferPodiumApproachPasses` (mặc định false): người bị vượt ở đoạn leo TRONG LIST của một màn lên bục đứng yên,
+  giữ số hạng cũ, cho tới tick host thả cổng bục; đúng tick đó họ cùng xuống một ô (theo `PodiumPassSlideDuration`, 0 = đặt
+  thẳng) với số hạng thật, không nhịp `Pass`. Màn leo không lên bục vẫn theo `DeferPassSlidesToLand` như cũ.
+- `MotionSettings.PodiumApproachScrollSpeed` (mặc định 0 = tắt): tốc độ (đơn vị canvas / giây) của cú tiếp cận ranh giới bục
+  kiểu cuộn. Bật thì màn lên bục bắt đầu trong list (kể cả đúng ô ranh giới) mở màn canh giữa ô xuất phát, LUÔN có pha Climb
+  dài đúng quãng cuộn về đỉnh list chia cho tốc độ (không kẹp theo `ClimbDurationMinimum` / `Maximum`), camera và `Slot` của
+  row mình đi theo cùng một tiến độ từ cùng một tick (đường đi trên màn hình là đường thẳng), nhịp `Pass` theo đồng hồ tính trên
+  thời lượng đó (thời lượng 0 vẫn đúng một nhịp).
+- `MotionSettings.PodiumApproachStopOffsetRows` (mặc định 0): chỗ DỪNG của row mình ở cuối cú tiếp cận kiểu cuộn, tính bằng phần
+  của một bước hàng so với ô ranh giới (âm = cao hơn) — cho host giữ ảnh thật của list mà vẫn dừng đúng chỗ một game tham chiếu
+  dừng (đích của họ tính bằng vùng bục ngắn hơn ảnh thật: −8 / 224 bước). Chỉ đổi Slot của row mình trong cú tiếp cận và lúc đứng
+  chờ ở cổng; camera, thời lượng, luật vượt không đổi; không có cú tiếp cận (đổi chỗ trên bục, tốc độ 0) thì không áp.
+- `MotionSettings.HostPresentedRowSkipsQuietPulse` (mặc định false): lượt không đổi chỗ (ScoreImproved / Unchanged / RankDown) của
+  row mình đang do host trình bày (`ListPresence` = 0) có pha Bob dài 0 giây — hiệu ứng của host quyết định lúc màn diễn xong.
+- `MotionSettings.CoroutineFrameTiming` (mặc định false): mọi pha của timeline theo nhịp khung của một coroutine
+  `elapsed += dt; vẽ; yield` thay vì đồng hồ liên tục — pha bắt đầu vì host thả cổng (hay vì pha trước dài 0 giây) vẽ khung đầu ở
+  giây dt của chính khung đó; pha có độ dài vẽ mẫu cuối ở khung hết giờ và trao cho pha kế ở khung SAU (nhịp của pha kế phát ở
+  khung đó); tick theo đồng hồ (`ClimbTickInterval`) hẹn lại từ khung nó nổ (0,18 s ở 60 Hz = đúng 11 khung). Số khung mỗi pha,
+  chuỗi nhịp và trạng thái cuối không đổi; chỉ mẫu vẽ sớm một khung — đúng như một game tham chiếu mà host muốn khớp từng khung.
+- `MotionSettings.IntroUsesListBuffer` (mặc định false) + `IntroBufferAbove` / `IntroBufferBelow` / `IntroBufferBelowRecentred`
+  (200 / 200 / 300): đợt trượt vào gồm đúng các ô một list ảo hoá đang giữ view — từ ô chứa điểm cách mép trên khung nhìn
+  `IntroBufferAbove` tới ô cuối có mép trên cách mép dưới khung nhìn không quá đệm dưới (lớn hơn khi list mở ở chỗ cuộn khác 0) —
+  row thứ k của cửa sổ trễ `IntroRowDelayOffset` + k × `IntroStagger`, và `BoardModel.IntroSettleSeconds` là lúc row cuối cửa sổ
+  đậu. `VirtualListLayout.BufferedSlots(...)` mới tính cửa sổ đó. Cờ tắt = như cũ (ô vừa khung nhìn + 1).
+- `BoardModel.HasPodiumApproach`, `PodiumApproachStartScroll`, `PodiumApproachProgress`, `SetPodiumApproachStartScroll(scroll)`:
+  trạng thái chung của cú tiếp cận giữa timeline và list (list báo quãng cuộn lúc dựng, timeline ghi tiến độ đã ease mỗi tick).
+  Model tự lái bằng tay mà không báo quãng cuộn thì thời lượng rơi về công thức leo thường.
+- `LeaderboardScrollView.floatingRowLayer` (tuỳ chọn) + `FloatingRowLayer`: một RectTransform rỗng NGOÀI mask của list. Trong cú
+  tiếp cận bục kiểu cuộn, list đặt nó trùng khung Content mỗi frame và vẽ view của row mình trong đó, nên ô ranh giới nằm dưới đáy
+  khung nhìn (màn thấp, 4:3) vẫn thấy row; khi row rời list (host giành thanh, hay lên bục) view về lại Content và pool. Trống =
+  như cũ. `LeaderboardPrefabValidator` coi field này là tuỳ chọn.
+- `LeaderboardVisualSettings.StageListBeforeHostReady` (mặc định false = y hệt trước) + sự kiện `LeaderboardWidget.ListStaged` +
+  `LeaderboardScrollView.StageModel(model)`: bật thì widget dựng list NGAY khi dữ liệu về, trước khi `HostReady` xong — model mới,
+  màn diễn chuẩn bị sẵn (row người chơi về ô cũ, chưa lấy lease), mép trên ô cũ của row người chơi sát mép trên khung nhìn (đỉnh
+  list khi row đó nằm trong phần host trình bày, hay khi `OpenAtTop`), mọi row ở tư thế đầu đợt trượt (chưa hiện) và model KHÔNG
+  được tick. Host sẵn sàng thì lượt trình bày dùng lại đúng model + màn diễn đó: list canh lại, đợt trượt và timeline bắt đầu như
+  cũ (board mất lease trong lúc chờ thì dựng lại model từ bảng cuối). Không dựng sẵn khi host đã sẵn sàng lúc dữ liệu về hay khi
+  request `SkipIntro`. Cho host có phần tự vẽ nằm trong nội dung cuộn (bục) khớp một game tham chiếu mà khung đầu của màn đã đứng ở
+  hàng người chơi — không còn khung nào lộ phần host ở chỗ cuộn 0 trước khi list kịp dựng.
+- `LeaderboardScrollView.OpenAtTop` (mặc định false = y hệt trước): bật thì lần dựng model không có cú tiếp cận bục mở list ở
+  đỉnh (chỗ cuộn 0) thay vì canh vào row người chơi; đợt trượt vào tính theo chỗ cuộn đó. Cho màn chỉ-xem-bảng mà host tự hiện
+  row người chơi bằng thanh ghim riêng.
+- `MotionSettings.PodiumApproachShortfallRows` (mặc định 0 = tắt): quãng HỤT của cú tiếp cận bục kiểu cuộn, tính bằng phần của
+  một bước hàng — chỉ áp khi lúc bắt đầu vùng host trình bày đã trôi hẳn khỏi khung nhìn (chỗ cuộn ≥ mép trên ô ranh giới). Bật
+  thì camera dừng ở (số này × bước hàng) thay vì đỉnh list và đứng yên ở đó, thời lượng = (quãng cuộn − khoảng hụt) / tốc độ,
+  và chỗ dừng của row mình dời theo đúng khoảng đó nên trên màn hình row vẫn dừng ở chỗ cũ. Cho host khớp một game tham chiếu
+  đo quãng cuộn còn lại bằng chiều cao MODEL của vùng bục (ngắn hơn ảnh thật của nó ⇒ list dừng cách đỉnh một khoảng lẻ).
+- `BoardModel.SetPodiumApproachScrollRange(startScroll, endScroll)`, `PodiumApproachEndScroll`, `PodiumApproachStopsShort`: list
+  báo cả hai đầu của cú tiếp cận (`LeaderboardScrollView` tự báo lúc dựng). `SetPodiumApproachStartScroll(scroll)` giữ nguyên
+  nghĩa cũ (chỗ cuối = 0). Cờ tắt / không có quãng hụt = y hệt khi chỉ báo chỗ đầu.
+- `MotionSettings.ClimbTickFrameRate` (mặc định 0 = tắt; chỉ có tác dụng khi `CoroutineFrameTiming` bật): tick theo đồng hồ của
+  cú leo nằm trên lưới khung của tốc độ này — khoảng `ClimbTickInterval` làm tròn LÊN số khung (0,18 s ở 60 = 11 khung = 0,1833 s),
+  tick thứ k nổ ở khung gần mốc k × khoảng đó nhất, tính dồn từ khung đầu của pha. Đồng hồ thật không đều 1/60 thì cách hẹn lại
+  từ khung nổ để độ trễ cộng dồn qua cả cú leo; lưới dồn giữ mọi tick trong một khung của mốc. Số tick không đổi.
+
+### Tests
+- `RevealTimelinePodiumApproachTests` (37): thời lượng tiếp cận = quãng cuộn / 2500 ở khung nhìn 1030,1 (hạng 4 → 0,0928 s … hạng
+  25 → 1,9744 s, sai ≤ 1e-4 s) với 1 / 1 / 4 / 8 / 10 nhịp tick; bắt đầu ở ranh giới vẫn có cú tiếp cận với đúng một nhịp; quãng
+  cuộn 0 xong ngay với đúng một nhịp; Slot của row mình và tiến độ camera là cùng một giá trị ở mọi tick; không có cú tiếp cận khi
+  đổi chỗ trên bục / cờ tắt; rơi về công thức leo khi không có list; bỏ qua / đóng giữa chừng đưa camera về nhà; người bị vượt
+  đứng yên suốt cú tiếp cận + cổng rồi về ô mới với số hạng thật ĐÚNG tick thả cổng, không nhịp Pass (đối chứng cờ tắt: họ nhường
+  chỗ ngay); bỏ qua ở mọi tick vẫn về trạng thái cuối; ScoreImproved / RankDown trên bục xong ngay trong tick hết Intro (đối chứng
+  cờ tắt và row trong list: nhịp nhẹ 0,42 s); số hạng cuối hiện từ tick nhịp Lift, không pha Spin; hào quang và dòng mũi tên còn
+  chạy đúng nhịp PodiumTakeover; chỗ dừng lệch −8 / 224: row đi theo tiến độ camera tới đó, đứng chờ ở đó, thả cổng thì tới ô
+  đích (4 → 1, 12 → 2), không áp khi không có cú tiếp cận (3 → 2, tốc độ 0); bật bốn cờ mà không lên bục (48 → 37, cả khi bỏ qua)
+  trùng từng bit với tắt; mặc định tắt; `Clone`.
+- `RevealTimelineCoroutineFrameTimingTests` (8): khung thả cổng vẽ Lift ở giây dt; pha 12 khung vẽ mẫu cuối ở khung 12 và sang
+  Climb (cùng nhịp Pass đầu) ở khung 13; cú tiếp cận hạng 4 cuộn ngay khung đầu, 6 khung ở 60 Hz rồi mới tới cổng + PodiumTakeover;
+  tick 0,18 s cách nhau đúng 11 khung khi bật (đối chứng cờ tắt: có khoảng 10 khung); cùng chuỗi nhịp và trạng thái cuối với đồng hồ
+  liên tục; mặc định tắt; `Clone`.
+- `ListIntroBufferTests` (5): bố cục tham chiếu (bước 224, lề trên −23, khung nhìn 1030,1, đệm 200 / 300): mở ở đỉnh giữ 3 hàng
+  (xong 0,62 s), canh giữa hạng 4 giữ 5 (0,68 s), hạng 5 giữ 6 (0,71 s), giữa list giữ 8 kể cả một hàng trên khung nhìn (0,77 s);
+  mặc định tắt; `Clone`.
+- `LeaderboardPodiumApproachUITests` (4): mở màn canh giữa ô ranh giới (không phải đỉnh list như khi cờ tắt); camera = lerp(chỗ mở
+  màn, 0, tiến độ) và khoảng cách row mình tới mép trên khung nhìn tuyến tính theo tiến độ ở mọi tick, thời lượng = quãng cuộn /
+  tốc độ, kể cả khi cấu hình bám mềm; lớp nổi (khác cha, widget thu 0,9) giữ row mình đúng chỗ và đúng cỡ list sẽ vẽ, rồi trả view
+  về Content khi host giành thanh; cờ tắt thì không view nào rời Content.
+- `LeaderboardStagingUITests` (+5, mới): cờ tắt thì list trống tới lúc host sẵn sàng và không bắn `ListStaged`; cờ bật thì list
+  dựng sẵn ở ô cũ sát mép trên, mọi row chờ ở đầu đợt trượt (α 0) suốt 30 khung chờ host, rồi lượt thật dùng lại CÙNG model, canh
+  giữa lại và diễn trọn; row sau bục dựng sẵn ở đỉnh; host sẵn sàng sẵn / `SkipIntro` thì không dựng sẵn.
+- `RevealTimelineCoroutineFrameTimingTests` (+3): mặc định `ClimbTickFrameRate` = 0 và `Clone()` mang nó; khung đều 1/60 thì lưới
+  cho đúng 11 khung mỗi tick như cách hẹn lại; khung 1/61,5 s (đồng hồ nhanh hơn 60 một chút) thì cách hẹn lại trôi dần còn lưới
+  giữ tick thứ k trong một khung của k × 11/60.
+- `RevealTimelinePodiumApproachTests` (+3): dừng hụt 11 / 224 bước — thời lượng (2023,95 − 11) / 2500 = 0,8052 s, row dời
+  theo và trên màn vẫn dừng đúng chỗ của cú tiếp cận không hụt; list báo chỗ cuối 0 thì quãng hụt không áp; hai đầu được kẹp
+  (âm về 0, chỗ cuối không vượt chỗ đầu, báo chỉ chỗ đầu = về đỉnh). Mặc định + `Clone()` mang field mới.
+- Test: 487/487 EditMode (353 leaderboard + 134 League) + 13/13 PlayMode trên Unity 6000.5.7f1; 487/487 EditMode trên
+  2022.3.62f2 + TMP 3.0.7. Chạy thật trong Icon Match (2022.3.62f2, TMP 3.2.0-pre.12) cùng bộ EditMode của game.
+
+## [0.5.0] - 2026-09-25
+
+_Chưa từng được tag riêng — phát hành trong 0.6.0._
+
+Dòng mũi tên lên hạng (`LeaderboardRowRankUpStream`) có thể mang dáng của một **hệ hạt thật**: mỗi mũi một tuổi thọ và một tốc
+độ riêng, dòng đã chạy sẵn lúc bắt đầu, vị trí ngang rải như hình chiếu của một đĩa phát. Tất cả opt-in: bốn field mới để mặc
+định (0 / `Uniform`) thì vẽ y hệt 0.4.0 — chốt bằng dấu vân tay 20 mốc đồng hồ ghi từ 0.4.0 (không ghi lại). View vẫn là hàm thuần
+của đồng hồ model (giá trị ngẫu nhiên của mũi thứ k là dãy low-discrepancy cố định theo k), nên vẫn đúng qua thu hồi view và skip.
+Không đổi chữ ký public nào đang có; chỉ thêm.
+
+### Added
+- `MotionSettings.ScoreImprovedPill` (mặc định true): tắt thì lượt `ScoreImproved` không bật pill "BEST" — nhịp
+  `ScoreImproved` vẫn phát cho sink.
+- `MotionSettings.NewEntryAccent` (mặc định true): tắt thì cú nở `NewEntry` không kèm pill "NEW", vệt shine, cú loé — cú nở,
+  nhịp `NewEntry` và `OnLanded` giữ nguyên.
+- `LeaderboardPresentRequest.SkipIntro` + constructor bốn tham số: dựng list thẳng ở tư thế đứng, không trượt vào (lượt trình
+  bày lại trên một trang đã mở). Đặt tên theo chiều "bỏ" để `default(LeaderboardPresentRequest)` vẫn là hành vi cũ.
+- `BoardModel.HasStartedIntro`: model có chạy đợt trượt vào không (khi không, `IntroSettleSeconds` = 0 không phân biệt được với
+  "chưa có").
+- `LeaderboardTextConfig.scoreFormat` / `ScoreFormat` (mặc định `"N0"`, `DefaultScoreFormat`): chuỗi định dạng số điểm trên row.
+- `LeaderboardRowRankUpStream.lifetimeRange`: tuổi thọ mỗi mũi bốc trong khoảng (0, 0 = dùng `lifetime`).
+- `LeaderboardRowRankUpStream.riseSpeedRange`: tốc độ bay lên riêng mỗi mũi (đơn vị canvas / giây) tính từ `riseRange.x`
+  (0, 0 = bay từ `riseRange.x` tới `riseRange.y` trong đúng một đời như cũ).
+- `LeaderboardRowRankUpStream.prewarmDuration`: dòng đã chạy sẵn bấy nhiêu giây lúc bắt đầu — có mũi sinh trước mốc bắt đầu nên
+  ngay khung đầu đã thấy vài mũi đang bay (0 = tắt; bật thì `openingBurst` bị bỏ qua).
+- `LeaderboardRowRankUpStream.horizontalDistribution` + enum `HorizontalDistribution { Uniform, ProjectedDisc }`: `ProjectedDisc`
+  rải vị trí ngang như hình chiếu một đĩa phát đều (dày ở giữa, thưa ra hai mép).
+
+### Tests
+- `RevealTimelineAccentFlagTests`: dấu vân tay các lượt `ScoreImproved` / `NewEntry` (mặc định + cấu hình kiểu host) ghi từ code
+  TRƯỚC khi có hai cờ điểm nhấn; tắt cờ thì mất đúng điểm nhấn, nhịp vẫn phát. `LeaderboardUITests`: request mặc định vẫn trượt
+  vào, `SkipIntro` dựng list đứng yên mà vẫn diễn trọn; `scoreFormat` mặc định "1,234", "0" ra "1234".
+- `LeaderboardRowRankUpStreamTests`: dấu vân tay mặc định = 0.4.0 ở 20 mốc đồng hồ; tuổi thọ theo khoảng tất định theo k; prewarm
+  1 s nhịp 0,2 s thấy 3–4 mũi ngay lúc bắt đầu; tốc độ riêng nằm trong khoảng; hình chiếu đĩa dồn mũi về giữa.
+- Chạy thật trong Icon Match (2022.3.62f2, TMP 3.2.0-pre.12) cùng bộ EditMode của game.
+
 ## [0.4.0] - 2026-09-25
 
 Bản phát hành đầu tiên có các thay đổi của **0.3.0** — 0.3.0 chưa từng được tag, toàn bộ mục 0.3.0 bên dưới nằm trong 0.4.0.
