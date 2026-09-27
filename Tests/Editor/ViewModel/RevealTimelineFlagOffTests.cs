@@ -28,6 +28,9 @@ namespace DreamTech.Leaderboard.Tests
         public int TailRevealedCount;
         public int CameraSnapCount;
 
+        /// <summary>Độ loé lớn nhất của row mình qua mọi frame. KHÔNG vào dấu vân tay (không ghi vào <see cref="Values"/>).</summary>
+        public float MaximumLocalFlash;
+
         private int _tick = -1;
 
         public BoardModel Model { get; private set; }
@@ -119,6 +122,7 @@ namespace DreamTech.Leaderboard.Tests
             Values.Add(local.GlowBoost);
             Values.Add(local.DisplayScore);
             Values.Add(local.Flash);
+            if (local.Flash > MaximumLocalFlash) MaximumLocalFlash = local.Flash;
         }
 
         public void OnBeat(LeaderboardBeat beat, in LeaderboardBeatContext context)

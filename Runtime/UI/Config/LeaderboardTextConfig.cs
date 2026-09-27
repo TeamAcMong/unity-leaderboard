@@ -22,6 +22,12 @@ namespace DreamTech.Leaderboard.UI
         [SerializeField] private string localPlayerName = "";
         [Tooltip("Tên thay thế khi backend trả tên rỗng.")]
         [SerializeField] private string fallbackPlayerName = "Player";
+        [Tooltip("Chuỗi định dạng .NET cho số điểm trên row (InvariantCulture). \"N0\" (mặc định) = 1,234; \"0\" = 1234. " +
+                 "Để trống = \"N0\".")]
+        [SerializeField] private string scoreFormat = DefaultScoreFormat;
+
+        /// <summary>Định dạng điểm của mọi bản trước khi có <see cref="ScoreFormat"/> — có dấu phân cách hàng nghìn.</summary>
+        public const string DefaultScoreFormat = "N0";
 
         public string Title => title;
         public string Loading => loading;
@@ -36,5 +42,6 @@ namespace DreamTech.Leaderboard.UI
         public string Gap => gap;
         public string LocalPlayerName => localPlayerName;
         public string FallbackPlayerName => fallbackPlayerName;
+        public string ScoreFormat => string.IsNullOrEmpty(scoreFormat) ? DefaultScoreFormat : scoreFormat;
     }
 }

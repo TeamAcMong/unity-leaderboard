@@ -127,7 +127,7 @@ namespace DreamTech.Leaderboard.UI
             ApplyStyle(row.IsLocalPlayer, context.TierRule.MedalIndex(row.DisplayRank), context.Theme);
             ApplyIdentity(row, context);
             ApplyRank(row.DisplayRank, context);
-            ApplyScore(row.DisplayScore);
+            ApplyScore(row.DisplayScore, context.Text.ScoreFormat);
             ApplyPillContent(row, context);
             NotifyDecorators(row, context);
         }
@@ -300,11 +300,11 @@ namespace DreamTech.Leaderboard.UI
             if (rankBadgeImage && !_hasSkinBadge) rankBadgeImage.color = context.Theme.MedalColor(medal);
         }
 
-        private void ApplyScore(long score)
+        private void ApplyScore(long score, string format)
         {
             if (score == _shownScore) return;
             _shownScore = score;
-            if (scoreText) scoreText.text = score.ToString("N0", CultureInfo.InvariantCulture);
+            if (scoreText) scoreText.text = score.ToString(format, CultureInfo.InvariantCulture);
         }
 
         private void ApplyPillContent(RowState row, LeaderboardRenderContext context)

@@ -130,6 +130,19 @@ namespace DreamTech.Leaderboard.ViewModel
             return (y - offset) / Stride;
         }
 
+        /// <summary>
+        /// Cửa sổ ô mà một list ảo hoá đang giữ view (<c>MotionSettings.IntroUsesListBuffer</c>): từ ô CHỨA điểm
+        /// <paramref name="bufferAbove"/> trên mép trên khung nhìn tới ô cuối có mép trên không quá mép dưới khung nhìn +
+        /// <paramref name="bufferBelow"/>. Trả ô đầu và SỐ ô (0 khi cửa sổ rỗng); ô âm bị kẹp về 0.
+        /// </summary>
+        public void BufferedSlots(float scroll, float viewportHeight, float bufferAbove, float bufferBelow, out int firstSlot,
+                                  out int slotCount)
+        {
+            firstSlot = Math.Max(0, (int)Math.Floor(TopVisibleSlot(scroll - Math.Max(0f, bufferAbove))));
+            int lastSlot = (int)Math.Floor(TopVisibleSlot(scroll + Math.Max(0f, viewportHeight) + Math.Max(0f, bufferBelow)));
+            slotCount = Math.Max(0, lastSlot - firstSlot + 1);
+        }
+
         /// <summary>Gợi ý số row vừa viewport để quyết định tải bao nhiêu; bỏ qua divider vì chỉ cần xấp xỉ.</summary>
         public int VisibleRowCapacity(float viewportHeight)
         {

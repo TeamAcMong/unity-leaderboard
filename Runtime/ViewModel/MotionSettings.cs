@@ -102,6 +102,21 @@ namespace DreamTech.Leaderboard.ViewModel
         public bool RankUpShine = true;
 
         /// <summary>
+        /// Có hiện pill "BEST" khi điểm tăng mà hạng đứng yên (<c>RankChangeKind.ScoreImproved</c>) không. true (mặc định) =
+        /// như cũ.
+        ///
+        /// <para>Tắt khi game coi lượt "có điểm, không đổi hạng" là một nhịp nhẹ im lặng (<see cref="QuietPulseInsteadOfBob"/>):
+        /// một viên thuốc xanh đứng 1,7 s trên hàng nói to hơn chính nhịp đó.</para>
+        /// </summary>
+        public bool ScoreImprovedPill = true;
+
+        /// <summary>
+        /// Row mình MỚI vào bảng (<c>RankChangeKind.NewEntry</c>) có kèm pill "NEW", vệt shine và cú loé không. true (mặc định)
+        /// = như cũ. Tắt thì cú nở (Pop) vẫn chạy, nhịp <c>NewEntry</c> vẫn phát cho sink, chỉ bỏ ba điểm nhấn đó.
+        /// </summary>
+        public bool NewEntryAccent = true;
+
+        /// <summary>
         /// Glow của row mình giữ sáng suốt cú đáp rồi mới tắt ở cuối (InCubic), thay vì tắt ngay từ đầu pha đáp
         /// (OutCubic — mặc định, như cũ).
         ///
@@ -305,6 +320,32 @@ namespace DreamTech.Leaderboard.ViewModel
         public float IntroRowDelayOffset;
 
         /// <summary>
+        /// Đợt trượt vào gồm những row mà một list ẢO HOÁ đang GIỮ view, thay vì những row vừa khung nhìn. false (mặc định) =
+        /// như cũ (<c>VirtualListLayout.VisibleRowCapacity</c> + 1 ô tính từ ô trên cùng đang thấy).
+        ///
+        /// <para>Bật thì cửa sổ là từ ô CHỨA điểm <see cref="IntroBufferAbove"/> phía trên mép trên khung nhìn tới ô cuối có mép
+        /// trên cách mép dưới khung nhìn không quá đệm dưới — <see cref="IntroBufferBelow"/> khi list mở ở đỉnh (cuộn 0),
+        /// <see cref="IntroBufferBelowRecentred"/> khi list mở ở một chỗ cuộn khác 0 (đã canh giữa lại, nên còn giữ các view tạo
+        /// ở chỗ cũ tới khoảng cách thu hồi). Row thứ k của cửa sổ (tính từ đầu cửa sổ, kể cả row nằm ngoài khung nhìn) trễ
+        /// <see cref="IntroRowDelayOffset"/> + k × <see cref="IntroStagger"/>, và mốc "đợt trượt xong"
+        /// (<c>BoardModel.IntroSettleSeconds</c>) là lúc row CUỐI cửa sổ đậu. Ô host trình bày (bục) không nằm trong cửa sổ.</para>
+        ///
+        /// <para>Vì sao: một game tham chiếu trượt vào đúng các view list của nó đang giữ (tạo trong 200, thu hồi ngoài 300 đơn vị
+        /// quanh khung nhìn) và chờ view cuối đậu rồi mới đi nhịp kế — nên ba hàng dưới bục khi mở ở đỉnh, năm hàng khi mở ở
+        /// hạng 4, tám hàng khi mở giữa list: nhịp kế đến ở 0,62 / 0,68 / 0,77 s thay vì một mốc chung.</para>
+        /// </summary>
+        public bool IntroUsesListBuffer;
+
+        /// <summary>Đệm phía TRÊN khung nhìn của cửa sổ trượt vào (<see cref="IntroUsesListBuffer"/>), đơn vị canvas.</summary>
+        public float IntroBufferAbove = 200f;
+
+        /// <summary>Đệm phía DƯỚI khung nhìn khi list mở ở đỉnh (<see cref="IntroUsesListBuffer"/>), đơn vị canvas.</summary>
+        public float IntroBufferBelow = 200f;
+
+        /// <summary>Đệm phía DƯỚI khung nhìn khi list mở ở một chỗ cuộn khác 0 (<see cref="IntroUsesListBuffer"/>).</summary>
+        public float IntroBufferBelowRecentred = 300f;
+
+        /// <summary>
         /// Người bị vượt ĐỨNG YÊN (giữ cả số hạng cũ) suốt cú leo trong list; tới lúc đáp, họ cùng dời xuống một ô trong
         /// <see cref="LandPassSlideDuration"/> giây theo đường thẳng, và chỉ đổi số hạng khi màn diễn chốt. false (mặc định) =
         /// như cũ: ai bị vượt thì nhường chỗ ngay lúc đó (<see cref="PassSlideDuration"/>).
@@ -346,6 +387,109 @@ namespace DreamTech.Leaderboard.ViewModel
         /// <see cref="LandCurve"/> trong <see cref="LandDuration"/>), và KHÔNG sáng glow. false (mặc định) = như cũ.
         /// </summary>
         public bool QuietPulseInsteadOfBob;
+
+        // ---------------------------------------------------------------- Cú lên bục theo một game tham chiếu (0.6.0, opt-in)
+        //
+        // Ba cờ cho màn lên hạng ĐÁP vào phần host trình bày (HostPresentedTopRanks). Tắt cả ba (mặc định) thì quỹ đạo, nhịp và
+        // hình trùng khít 0.5.0 — chốt bằng các dấu vân tay cờ-tắt sẵn có (không ghi lại).
+
+        /// <summary>
+        /// Những người bị vượt ở đoạn leo TRONG LIST của một màn lên bục ĐỨNG YÊN (giữ cả số hạng cũ) cho tới lúc host thả cổng
+        /// bục; đúng tick được thả họ cùng xuống một ô với số hạng thật — theo <see cref="PodiumPassSlideDuration"/> (0 = đặt
+        /// thẳng) và không nhịp <c>Pass</c> nào. false (mặc định) = như 0.5.0: ai bị vượt thì nhường chỗ ngay lúc đó.
+        ///
+        /// <para>Ẩn dụ: row mình là tấm thẻ NỔI trôi tới ranh giới bục, danh sách bên dưới không xếp lại; host đặt người chơi
+        /// lên bục rồi cả bảng về trạng thái cuối trong MỘT frame (cùng frame host dựng lại bục). Chỉ áp cho màn lên bục —
+        /// màn leo trong list có cờ riêng (<see cref="DeferPassSlidesToLand"/>).</para>
+        /// </summary>
+        public bool DeferPodiumApproachPasses;
+
+        /// <summary>
+        /// Tốc độ (đơn vị canvas / giây) của cú TIẾP CẬN ranh giới bục kiểu cuộn. 0 (mặc định) = tắt, như 0.5.0.
+        ///
+        /// <para>Bật (&gt; 0) thì màn lên hạng đáp vào bục từ một ô ≥ <c>BoardModel.HiddenLeadingSlots</c> (bắt đầu TRONG list):</para>
+        /// <list type="bullet">
+        /// <item>camera mở màn canh giữa ô xuất phát — kể cả khi đó chính là ô ranh giới;</item>
+        /// <item>đoạn leo trong list LUÔN có (xuất phát ở ô ranh giới thì là một cú leo không vượt ai), dài đúng quãng cuộn
+        /// từ chỗ canh giữa đó về đỉnh list chia cho tốc độ này — không kẹp theo <see cref="ClimbDurationMinimum"/> /
+        /// <see cref="ClimbDurationMaximum"/>;</item>
+        /// <item>camera và Slot của row mình đi theo CÙNG một tiến độ (<see cref="ClimbCurve"/>) từ cùng một tick
+        /// (<c>BoardModel.PodiumApproachProgress</c>), nên trên màn hình row đi đúng một đường thẳng từ chỗ canh giữa tới ô
+        /// ranh giới;</item>
+        /// <item>nhịp <c>Pass</c> theo đồng hồ (<see cref="ClimbTickInterval"/>) tính trên thời lượng đó — thời lượng 0 vẫn có
+        /// đúng một nhịp.</item>
+        /// </list>
+        /// <para>Quãng cuộn do list báo (<c>BoardModel.SetPodiumApproachStartScroll</c>, <c>LeaderboardScrollView</c> tự ghi lúc
+        /// dựng). Model không có list nào báo (tự lái bằng tay) thì thời lượng rơi về công thức leo thường.</para>
+        /// </summary>
+        public float PodiumApproachScrollSpeed;
+
+        /// <summary>
+        /// Chỗ DỪNG của row mình ở cuối cú tiếp cận (<see cref="PodiumApproachScrollSpeed"/> &gt; 0), tính bằng PHẦN của một bước
+        /// hàng so với ô ranh giới: âm = dừng CAO hơn ô ranh giới. 0 (mặc định) = dừng đúng ô ranh giới, như 0.5.0.
+        ///
+        /// <para>Vì sao cần: một game tham chiếu tính đích của cú tiếp cận bằng một chiều cao vùng bục NGẮN hơn ảnh thật của nó,
+        /// nên thẻ nổi dừng cao hơn ô hạng đầu của list một khoảng lẻ (ví dụ −8 / 224 bước). Host muốn vừa giữ ảnh thật của list
+        /// vừa dừng đúng chỗ đó thì đặt số này. Chỉ đổi Slot của row mình trong cú tiếp cận và lúc đứng chờ ở cổng; camera, thời
+        /// lượng, luật vượt và mọi row khác không đổi, và pha sau cổng đi tiếp từ đúng chỗ đang đứng.</para>
+        /// </summary>
+        public float PodiumApproachStopOffsetRows;
+
+        /// <summary>
+        /// Quãng HỤT của cú tiếp cận kiểu cuộn (<see cref="PodiumApproachScrollSpeed"/> &gt; 0), tính bằng PHẦN của một bước hàng —
+        /// chỉ áp khi lúc bắt đầu, vùng host trình bày ĐÃ trôi hẳn khỏi khung nhìn (chỗ cuộn ≥ mép trên ô ranh giới). 0 (mặc định)
+        /// = tắt: camera luôn về đỉnh list, như 0.6.0.
+        ///
+        /// <para>Vì sao cần: một game tham chiếu đo quãng cuộn còn lại bằng chiều cao MODEL của các ô đứng trước ô đang thấy đầu
+        /// tiên, và ô vùng bục trong model ngắn hơn ảnh thật của nó. Khi ô đó đã khuất lúc bắt đầu, quãng đo được hụt một khoảng
+        /// lẻ (ví dụ 11 / 224 bước): list dừng CÁCH đỉnh đúng khoảng đó và cú tiếp cận ngắn đi tương ứng. Bật số này thì: camera
+        /// dừng ở (số này × bước hàng) thay vì 0 và đứng yên ở đó, thời lượng = (quãng cuộn − khoảng đó) / tốc độ, còn chỗ dừng của
+        /// row mình dời theo đúng khoảng đó — trên màn hình row vẫn dừng đúng chỗ cũ, chỉ vùng host (và mọi thứ trong list) cao
+        /// hơn khoảng đó. Lúc bắt đầu vùng host còn thấy được thì không áp; không có cú tiếp cận thì không áp.</para>
+        /// </summary>
+        public float PodiumApproachShortfallRows;
+
+        /// <summary>
+        /// Row mình do host trình bày (<c>BoardModel.ListPresence</c> = 0 — đang đứng trên bục) thì pha Bob của lượt KHÔNG đổi
+        /// chỗ (ScoreImproved, Unchanged, RankDown) dài 0 giây — cả cú nhún sin lẫn nhịp nhẹ <see cref="QuietPulseInsteadOfBob"/>.
+        /// false (mặc định) = như 0.5.0.
+        ///
+        /// <para>Vì sao: row đó nằm SAU bục, không ai thấy cú nhún, mà màn diễn vẫn chờ nó (nhịp nhẹ mặc định 0,2 + 0,22 s) trước
+        /// khi báo xong. Host có hiệu ứng của riêng nó trên bục thì chính hiệu ứng đó phải quyết định lúc kết thúc.</para>
+        /// </summary>
+        public bool HostPresentedRowSkipsQuietPulse;
+
+        /// <summary>
+        /// Các pha của màn diễn đi theo NHỊP KHUNG của coroutine thay vì đồng hồ liên tục. false (mặc định) = như 0.5.0.
+        ///
+        /// <para>Bật thì:</para>
+        /// <list type="bullet">
+        /// <item>pha nào bắt đầu vì host thả cổng (<see cref="RevealTimeline.ReleaseHostHold"/> /
+        /// <see cref="RevealTimeline.ReleasePodiumHold"/>) hoặc vì pha trước dài 0 giây thì được tính luôn độ dài của CHÍNH khung
+        /// đó — khung đầu vẽ ở giây dt của pha, không phải giây 0;</item>
+        /// <item>pha có độ dài vẽ mẫu cuối (tiến độ 1) ở khung nó hết giờ, và pha kế bắt đầu ở khung SAU (nhịp của pha kế phát
+        /// ở khung đó), với giây dt của khung ấy;</item>
+        /// <item>nhịp tick theo đồng hồ của cú leo (<see cref="ClimbTickInterval"/>) phát tick đầu ở khung đầu của pha, rồi mỗi
+        /// tick sau ở khung đầu tiên cách khung của tick trước ít nhất một interval (đồng hồ hẹn lại từ khung nó nổ) — ở 60 Hz và
+        /// 0,18 s là đúng mỗi 11 khung.</item>
+        /// </list>
+        /// <para>Vì sao: một game tham chiếu diễn mỗi pha bằng một coroutine <c>elapsed += dt; vẽ; yield</c> gọi thẳng từ callback
+        /// của pha trước. Đồng hồ liên tục cho cùng các mốc nhịp nhưng vẽ mọi pha chậm một khung — ở cú tiếp cận 243 đơn vị trong
+        /// 6 khung là lệch tới ~55 đơn vị giữa chừng. Số khung của các pha, số nhịp và trạng thái cuối không đổi.</para>
+        /// </summary>
+        public bool CoroutineFrameTiming;
+
+        /// <summary>
+        /// Khi &gt; 0 (và <see cref="CoroutineFrameTiming"/> bật): tick theo đồng hồ của cú leo nằm trên LƯỚI KHUNG của tốc độ này thay vì
+        /// hẹn lại từ khung nổ. Khoảng <see cref="ClimbTickInterval"/> được làm tròn LÊN số khung của lưới (0,18 s ở 60 = 11 khung =
+        /// 0,1833 s), và tick thứ k nổ ở khung GẦN mốc k × khoảng đó nhất (sai nửa khung của lưới) — tính dồn từ khung đầu của pha.
+        /// 0 (mặc định) = như cũ.
+        ///
+        /// <para>Vì sao: đồng hồ thật của Editor/thiết bị không đều 1/60. Hẹn lại từ khung nổ thì mỗi khung ngắn hơn 1/60 một chút đẩy
+        /// tick sang khung thứ 12, và độ trễ CỘNG DỒN qua cả cú leo (đo được +100 ms sau 14 tick). Lưới dồn giữ mọi tick trong một khung
+        /// của mốc, không trôi.</para>
+        /// </summary>
+        public float ClimbTickFrameRate;
 
         public float PillTotalDuration => PillPopDuration + PillHoldDuration + PillRiseDuration;
 

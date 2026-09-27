@@ -452,6 +452,37 @@ namespace DreamTech.Leaderboard.UI.Tests
             Assert.AreEqual(0f, harness.Scroll, 0.01f, "Snap tới mình (đang trên bục) phải về đỉnh list.");
         }
 
+        // ---------------------------------------------------------------- Mở ở đỉnh list (OpenAtTop)
+
+        /// <summary>
+        /// <see cref="LeaderboardScrollView.OpenAtTop"/>: bật thì xem bảng khi mình ở hạng 30 mở ở ĐỈNH list và hàng đầu tiên của list
+        /// (hạng 4) có view + đang trượt vào; tắt (mặc định) thì y như trước — canh vào row mình, không ở đỉnh.
+        /// </summary>
+        [TestCase(true, TestName = "Browse_OpenAtTop_StartsAtTopAndSlidesFirstListedRow")]
+        [TestCase(false, TestName = "Browse_OpenAtTopOff_CentersLocalRowAsBefore")]
+        public void Browse_OpenAtTop(bool opensAtTop)
+        {
+            Harness harness = CreateHarness(TopRanks, listTopPadding: PodiumBandTopPadding);
+            harness.ScrollView.OpenAtTop = opensAtTop;
+            harness.PrepareBrowseAt(30);
+            harness.Present(BoardPresentMode.Browse);
+
+            BoardModel model = harness.Model;
+            Assert.IsNotNull(model, "Browse với dữ liệu cục bộ phải dựng model ngay trong PresentAsync.");
+            if (!opensAtTop)
+            {
+                Assert.Greater(harness.Scroll, 20f, "Cờ tắt: xem bảng phải canh vào row mình như trước.");
+                return;
+            }
+
+            Assert.AreEqual(0f, harness.Scroll, 0.01f, "OpenAtTop: xem bảng phải mở ở đỉnh list.");
+            RowState firstListed = model.Rows[TopRanks];
+            Assert.IsNotNull(harness.ScrollView.GetActiveView(firstListed), "Hàng đầu của list (hạng 4) phải có view ở khung đầu.");
+            Assert.IsTrue(firstListed.IsIntroPlaying, "Đợt trượt vào phải tính theo chỗ cuộn 0 — hàng đầu list phải đang trượt.");
+            harness.Advance(IntroSettleTicks);
+            Assert.AreEqual(0f, harness.Scroll, 0.01f, "Camera không được tự trôi về row mình sau khi mở ở đỉnh.");
+        }
+
         // ---------------------------------------------------------------- Thanh dính, banner, tia sáng, sao
 
         /// <summary>

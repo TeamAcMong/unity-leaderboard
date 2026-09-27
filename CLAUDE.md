@@ -183,3 +183,23 @@ lại validator.
   hồ riêng, nhịp nhẹ khi có điểm mà không đổi hạng). Mọi cờ mặc định tắt; dấu vân tay cờ-tắt (`RevealTimelineFlagOffTests`,
   `LeaderboardFlagOffRenderTests`) không được ghi lại. Repo public: không ghi tên game / class / asset của bản tham chiếu vào
   package.
+- **0.5.0:** dòng mũi tên lên hạng có dáng hệ hạt, opt-in (`lifetimeRange`, `riseSpeedRange`, `prewarmDuration`,
+  `horizontalDistribution`). Mặc định vẽ y hệt 0.4.0 — dấu vân tay `Defaults_RenderExactlyLikeVersion040` không được ghi lại.
+  Cùng bản: cờ opt-out `ScoreImprovedPill` / `NewEntryAccent` (mặc định true — dấu vân tay `RevealTimelineAccentFlagTests` ghi từ
+  code trước khi có cờ), `LeaderboardPresentRequest.SkipIntro` + `BoardModel.HasStartedIntro`, `LeaderboardTextConfig.scoreFormat`
+  (mặc định "N0"). Host có thể giữ lớp skip làm mặt nạ chặn chạm bằng cách tắt `interactable` của skipCatcher trên prefab variant
+  (package không đổi luật "luôn skip được" cho mặc định).
+- **0.6.0 (gộp 0.5.0 chưa từng tag):** cú lên bục theo một game tham chiếu, các cờ opt-in mặc định tắt: `DeferPodiumApproachPasses`
+  (người bị vượt trong list đứng yên tới tick host thả cổng bục), `PodiumApproachScrollSpeed` (cú tiếp cận ranh giới là cú cuộn:
+  mở màn canh giữa ô xuất phát, thời lượng = quãng cuộn / tốc độ, camera và row chung tiến độ — trạng thái chung nằm ở
+  `BoardModel.HasPodiumApproach` / `PodiumApproachStartScroll` / `PodiumApproachProgress`), `PodiumApproachStopOffsetRows` (row
+  mình dừng lệch khỏi ô ranh giới một phần bước hàng ở cuối cú tiếp cận và chờ ở đó; `PodiumApproachShortfallRows`
+  — vùng host đã khuất lúc bắt đầu thì camera dừng hụt đỉnh list bấy nhiêu bước, thời lượng tính quãng thật, row dời theo; list
+  báo hai đầu qua `BoardModel.SetPodiumApproachScrollRange` / `PodiumApproachEndScroll`), `HostPresentedRowSkipsQuietPulse`
+  (row trên bục không có nhịp nhẹ vô hình), `CoroutineFrameTiming` (mọi pha theo nhịp khung coroutine: khung đầu ở giây dt, pha kế
+  ở khung sau mẫu cuối, tick hẹn lại từ khung nó nổ — đường riêng `TickWithCoroutineFrameTiming`, cờ tắt không đi qua;
+  `ClimbTickFrameRate` — tick trên lưới khung dồn từ đầu pha thay vì hẹn lại, không trôi trên đồng hồ thật),
+  `IntroUsesListBuffer` (đợt trượt vào = cửa sổ view list đang giữ, `VirtualListLayout.BufferedSlots`, tính ở
+  `LeaderboardScrollView.StartModelIntro`); cộng `LeaderboardScrollView.floatingRowLayer` (tuỳ chọn) vẽ row mình ngoài mask trong
+  cú tiếp cận; `LeaderboardVisualSettings.StageListBeforeHostReady` (dựng sẵn list trước khi host sẵn sàng, event `ListStaged`) và
+  `LeaderboardScrollView.OpenAtTop`. Cờ tắt = trùng từng bit 0.5.0 (dấu vân tay cũ không ghi lại).

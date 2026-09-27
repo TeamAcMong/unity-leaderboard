@@ -16,7 +16,11 @@ namespace DreamTech.Leaderboard.EditorTools
         private const float PillPopPeakScale = 1.12f;
 
         private static readonly HashSet<string> OptionalWidgetFields = new HashSet<string> { "titleText", "motionConfig", "themeConfig", "textConfig" };
-        private static readonly HashSet<string> OptionalScrollFields = new HashSet<string> { "sunburst", "stickyAnchor", "stickyGroup", "stickyButton" };
+        /// <summary><c>floatingRowLayer</c> (0.6.0): chỉ game bật cú tiếp cận bục kiểu cuộn mới cần — trống là hành vi cũ.</summary>
+        private static readonly HashSet<string> OptionalScrollFields = new HashSet<string>
+        {
+            "sunburst", "stickyAnchor", "stickyGroup", "stickyButton", "floatingRowLayer",
+        };
 
         /// <summary>
         /// Nền điểm chỉ dùng khi theme có skin theo hạng. Avatar tô màu theo id + chữ cái đầu là placeholder: game có avatar thật
