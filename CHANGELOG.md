@@ -3,6 +3,20 @@
 Mọi thay đổi đáng kể của package ghi ở đây. Định dạng theo [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 phiên bản theo [Semantic Versioning](https://semver.org/).
 
+## [0.7.0] - 2026-09-27
+
+### Added
+- `StandardWinStreakRule.QuitKeepsStreak` + constructor mới `StandardWinStreakRule(winsPerLevel, reviveKeepsStreak,
+  quitKeepsStreak)`: bật thì thoát giữa chừng (`WinStreakEvent.LevelQuit`) GIỮ streak (cả bậc lẫn tiến độ trong bậc), còn chơi
+  lại (`LevelRetried`) và thua hẳn (`LevelLost`) vẫn mất; `WouldReset(..., LevelQuit)` đi theo nên popup cảnh báo tự đúng. Độc
+  lập với `ReviveKeepsStreak`. Constructor cũ giữ nguyên chữ ký và cho `QuitKeepsStreak` = false, nên hành vi mặc định không đổi.
+
+### Tests
+- `WinStreakRuleTests`: mặc định (và tắt tường minh) thoát vẫn mất streak; bật cờ thì thoát giữ, chơi lại / thua hẳn vẫn mất;
+  cờ thoát và cờ hồi sinh độc lập; thoát giữ cả tiến độ trong bậc khi `WinsPerLevel` > 1.
+- Test: 491/491 EditMode (353 leaderboard + 138 League) + 13/13 PlayMode trên Unity 6000.5.7f1; 491/491 EditMode trên
+  2022.3.62f2 + TMP 3.0.7.
+
 ## [0.6.0] - 2026-09-27
 
 Bản phát hành đầu tiên có các thay đổi của **0.5.0** — 0.5.0 chưa từng được tag, toàn bộ mục 0.5.0 bên dưới nằm trong 0.6.0.

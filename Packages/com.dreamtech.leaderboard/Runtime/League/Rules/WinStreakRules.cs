@@ -16,7 +16,8 @@ namespace DreamTech.Leaderboard.League
 
     /// <summary>
     /// Mặc định: thắng đủ <see cref="WinsPerLevel"/> trận thì lên một bậc (kẹt ở bậc cao nhất). Thua hẳn, thoát giữa chừng,
-    /// chơi lại giữa chừng thì mất hết. Hồi sinh thì giữ (tắt được bằng <see cref="ReviveKeepsStreak"/>).
+    /// chơi lại giữa chừng thì mất hết. Hồi sinh thì giữ (tắt được bằng <see cref="ReviveKeepsStreak"/>). Thoát giữa chừng
+    /// thì mất, trừ khi bật <see cref="QuitKeepsStreak"/> (constructor ba tham số).
     /// </summary>
     public sealed class StandardWinStreakRule : IWinStreakRule
     {
@@ -27,8 +28,21 @@ namespace DreamTech.Leaderboard.League
             ReviveKeepsStreak = reviveKeepsStreak;
         }
 
+        /// <summary>
+        /// Như constructor hai tham số, thêm <paramref name="quitKeepsStreak"/>: true thì thoát giữa chừng
+        /// (<see cref="WinStreakEvent.LevelQuit"/>) GIỮ streak; chơi lại và thua hẳn vẫn mất.
+        /// </summary>
+        public StandardWinStreakRule(int winsPerLevel, bool reviveKeepsStreak, bool quitKeepsStreak)
+            : this(winsPerLevel, reviveKeepsStreak)
+        {
+            QuitKeepsStreak = quitKeepsStreak;
+        }
+
         public int WinsPerLevel { get; }
         public bool ReviveKeepsStreak { get; }
+
+        /// <summary>Thoát giữa chừng có giữ streak không. Mặc định false (thoát là mất, như trước khi có cờ này).</summary>
+        public bool QuitKeepsStreak { get; }
 
         public WinStreakState Apply(WinStreakState state, WinStreakEvent streakEvent, WinStreakLadder ladder)
         {
@@ -55,9 +69,10 @@ namespace DreamTech.Leaderboard.League
             switch (streakEvent)
             {
                 case WinStreakEvent.LevelLost:
-                case WinStreakEvent.LevelQuit:
                 case WinStreakEvent.LevelRetried:
                     return true;
+                case WinStreakEvent.LevelQuit:
+                    return !QuitKeepsStreak;
                 case WinStreakEvent.LevelRevived:
                     return !ReviveKeepsStreak;
                 default:
