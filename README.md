@@ -15,7 +15,7 @@ và âm thanh/haptic. Cùng một widget đặt được vào popup, màn riêng
 **Package Manager → `+` → Add package from git URL:**
 
 ```
-https://github.com/TeamAcMong/unity-leaderboard.git#0.6.0
+https://github.com/TeamAcMong/unity-leaderboard.git#0.7.0
 ```
 
 hoặc thêm vào `Packages/manifest.json`:
@@ -23,7 +23,7 @@ hoặc thêm vào `Packages/manifest.json`:
 ```json
 {
   "dependencies": {
-    "com.dreamtech.leaderboard": "https://github.com/TeamAcMong/unity-leaderboard.git#0.6.0"
+    "com.dreamtech.leaderboard": "https://github.com/TeamAcMong/unity-leaderboard.git#0.7.0"
   }
 }
 ```
@@ -37,10 +37,10 @@ Tag chỉ chứa nội dung package (tách bằng `git subtree split`), nên cà
 
 | Unity | uGUI / TextMeshPro | Đã chạy |
 |---|---|---|
-| 6000.5.7f1 | uGUI 2.5.0 (TMP tích hợp, `com.unity.textmeshpro` 5.0.0 là shim) | 0.6.0: 487 test EditMode (353 leaderboard + 134 League) + 13 test PlayMode (scene demo + bảng thử League) |
+| 6000.5.7f1 | uGUI 2.5.0 (TMP tích hợp, `com.unity.textmeshpro` 5.0.0 là shim) | 0.7.0: 491 test EditMode (353 leaderboard + 138 League) + 13 test PlayMode (scene demo + bảng thử League) |
 | 6000.6.0f1 | uGUI 2.6.0 (TMP tích hợp, `com.unity.textmeshpro` 5.0.0 là shim) | 0.2.1: 244 test EditMode (110 leaderboard + 134 League) + 13 test PlayMode (scene demo + bảng thử League) |
-| 2022.3.62f2 | uGUI 1.0.0 + TMP 3.0.7 | 0.6.0: 487 test EditMode (0.4.0: 403) |
-| 2022.3.62f2 | uGUI + TMP 3.2.0-pre.12 | 0.6.0: chạy thật trong Icon Match cùng bộ EditMode của game (0.1.0: 99 test EditMode) |
+| 2022.3.62f2 | uGUI 1.0.0 + TMP 3.0.7 | 0.7.0: 491 test EditMode (0.4.0: 403) |
+| 2022.3.62f2 | uGUI + TMP 3.2.0-pre.12 | 0.7.0: chạy thật trong Icon Match cùng bộ EditMode của game (0.1.0: 99 test EditMode) |
 
 TMP 3.2 / uGUI 2.0 đổi `enableWordWrapping` thành `textWrappingMode`. Chỗ duy nhất dùng tới (công cụ Editor) chọn nhánh qua
 define `DREAMTECH_LEADERBOARD_TMP_WRAPPING_MODE` do `versionDefines` của asmdef Editor bật.
@@ -368,6 +368,11 @@ Game gọi:
 
 Luật nào cũng thay được bằng một dòng `With…` hoặc tham số của `LeagueRules`: vùng lên/xuống, kết quả mùa, streak, cúp mỗi
 trận, bảng thưởng, lịch mùa.
+
+**Luật streak mặc định** (`StandardWinStreakRule`): thua hẳn, chơi lại giữa chừng thì mất streak. `ReviveKeepsStreak` (mặc
+định true) cho hồi sinh giữ streak; `QuitKeepsStreak` (mặc định false, bật bằng
+`new StandardWinStreakRule(winsPerLevel, reviveKeepsStreak, quitKeepsStreak: true)`) cho thoát giữa chừng về Home giữ streak.
+`WouldLoseStreak` đi theo luật nên popup cảnh báo không cần tự đoán.
 
 **Đồng hồ và cheat tua giờ.** Mùa tính từ giờ, nên giờ lùi = mùa lùi. Lắp như ví dụ trên:
 - `OffsetLeagueClock(inner, store, key)` lưu độ lệch cheat — tắt/mở app không làm giờ League về lại giờ thật. Bản

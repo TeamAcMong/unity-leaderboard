@@ -1,6 +1,6 @@
 {
   "name": "com.dreamtech.leaderboard",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "displayName": "DreamTech Leaderboard",
   "description": "Leaderboard lắp ráp kiểu Lego cho game mobile. Domain + board + mock backend thuần C#, view-model test được từng tick không cần Unity, widget uGUI/TextMeshPro không phụ thuộc nơi đặt (popup, màn riêng, khối trong màn Win). Điểm xếp hạng, backend, âm thanh/haptic và nơi lưu trạng thái đều cắm qua port.",
   "unity": "2022.3",

@@ -203,3 +203,5 @@ lại validator.
   `LeaderboardScrollView.StartModelIntro`); cộng `LeaderboardScrollView.floatingRowLayer` (tuỳ chọn) vẽ row mình ngoài mask trong
   cú tiếp cận; `LeaderboardVisualSettings.StageListBeforeHostReady` (dựng sẵn list trước khi host sẵn sàng, event `ListStaged`) và
   `LeaderboardScrollView.OpenAtTop`. Cờ tắt = trùng từng bit 0.5.0 (dấu vân tay cũ không ghi lại).
+- **0.7.0:** `StandardWinStreakRule.QuitKeepsStreak` (constructor ba tham số, mặc định false): thoát giữa chừng giữ streak, chơi
+  lại / thua hẳn vẫn mất. Constructor cũ giữ nguyên chữ ký và hành vi.

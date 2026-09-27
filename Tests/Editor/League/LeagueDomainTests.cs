@@ -179,6 +179,59 @@ namespace DreamTech.Leaderboard.League.Tests
         }
 
         [Test]
+        public void QuitKeepsStreak_DefaultsOff_QuitStillResets()
+        {
+            var state = new WinStreakState(3, 0);
+            Assert.IsFalse(new StandardWinStreakRule().QuitKeepsStreak);
+            Assert.IsFalse(new StandardWinStreakRule(1, true).QuitKeepsStreak);
+
+            var explicitOff = new StandardWinStreakRule(1, true, quitKeepsStreak: false);
+            Assert.IsTrue(explicitOff.WouldReset(state, WinStreakEvent.LevelQuit));
+            Assert.IsTrue(explicitOff.Apply(state, WinStreakEvent.LevelQuit, Ladder).IsEmpty);
+        }
+
+        [Test]
+        public void QuitKeepsStreak_On_QuitKeeps_RetryAndLostStillReset()
+        {
+            var state = new WinStreakState(3, 0);
+            var rule = new StandardWinStreakRule(1, true, quitKeepsStreak: true);
+            Assert.IsTrue(rule.QuitKeepsStreak);
+
+            Assert.IsFalse(rule.WouldReset(state, WinStreakEvent.LevelQuit));
+            Assert.AreEqual(state, rule.Apply(state, WinStreakEvent.LevelQuit, Ladder));
+
+            Assert.IsTrue(rule.WouldReset(state, WinStreakEvent.LevelRetried));
+            Assert.IsTrue(rule.Apply(state, WinStreakEvent.LevelRetried, Ladder).IsEmpty);
+            Assert.IsTrue(rule.WouldReset(state, WinStreakEvent.LevelLost));
+            Assert.IsTrue(rule.Apply(state, WinStreakEvent.LevelLost, Ladder).IsEmpty);
+        }
+
+        [Test]
+        public void QuitKeepsStreak_IndependentOfReviveKeepsStreak()
+        {
+            var state = new WinStreakState(3, 0);
+
+            var quitKeepsReviveResets = new StandardWinStreakRule(1, reviveKeepsStreak: false, quitKeepsStreak: true);
+            Assert.IsFalse(quitKeepsReviveResets.WouldReset(state, WinStreakEvent.LevelQuit));
+            Assert.IsTrue(quitKeepsReviveResets.WouldReset(state, WinStreakEvent.LevelRevived));
+
+            var quitResetsReviveKeeps = new StandardWinStreakRule(1, reviveKeepsStreak: true, quitKeepsStreak: false);
+            Assert.IsTrue(quitResetsReviveKeeps.WouldReset(state, WinStreakEvent.LevelQuit));
+            Assert.IsFalse(quitResetsReviveKeeps.WouldReset(state, WinStreakEvent.LevelRevived));
+        }
+
+        [Test]
+        public void QuitKeepsStreak_WinsStillClimb()
+        {
+            var rule = new StandardWinStreakRule(2, true, true);
+            WinStreakState state = rule.Apply(WinStreakState.Empty, WinStreakEvent.LevelWon, Ladder);
+            state = rule.Apply(state, WinStreakEvent.LevelQuit, Ladder);
+            Assert.AreEqual(1, state.WinsTowardNextLevel, "Thoát giữ cả tiến độ trong bậc");
+            state = rule.Apply(state, WinStreakEvent.LevelWon, Ladder);
+            Assert.AreEqual(1, state.Level);
+        }
+
+        [Test]
         public void WouldReset_FalseWhenNoStreak()
         {
             Assert.IsFalse(new StandardWinStreakRule().WouldReset(WinStreakState.Empty, WinStreakEvent.LevelQuit));
